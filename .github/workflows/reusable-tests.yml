@@ -117,11 +117,17 @@ jobs:
 
       - name: Start the test web server
         working-directory: drupal
+        env:
+          # Drupal functional tests make requests that themselves trigger a
+          # sub-request to the same server; the single-threaded built-in server
+          # deadlocks on those and returns 500s. Run several worker processes so
+          # concurrent requests are served.
+          PHP_CLI_SERVER_WORKERS: '8'
         run: |
           set -euo pipefail
           mkdir -p web/sites/simpletest/browser_output
           chmod -R 0777 web/sites/simpletest
-          php -S 127.0.0.1:8080 -t web web/.ht.router.php > /tmp/php-server.log 2>&1 &
+          PHP_CLI_SERVER_WORKERS=8 nohup php -S 127.0.0.1:8080 -t web web/.ht.router.php > /tmp/php-server.log 2>&1 &
           for i in $(seq 1 15); do
             if curl -sSf http://127.0.0.1:8080/ > /dev/null 2>&1; then break; fi
             sleep 1
