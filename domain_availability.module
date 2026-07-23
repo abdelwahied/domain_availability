@@ -51,7 +51,6 @@ function domain_availability_theme(): array {
         'results' => [],
         'summary' => [],
       ],
-      'initial preprocess' => DomainAvailabilityThemePreprocess::class . ':preprocessResults',
     ],
     'domain_availability_error' => [
       'variables' => [
@@ -59,6 +58,19 @@ function domain_availability_theme(): array {
       ],
     ],
   ];
+}
+
+/**
+ * Implements hook_preprocess_HOOK() for domain_availability_results.
+ *
+ * A thin delegate to the preprocess class, which stays the single source of the
+ * logic. This procedural hook is the registration mechanism both Drupal 10.3+
+ * and Drupal 11 support; the theme registry's "initial preprocess" key exists
+ * only on Drupal 11, so relying on it alone left the results unprocessed on
+ * Drupal 10.
+ */
+function domain_availability_preprocess_domain_availability_results(array &$variables): void {
+  \Drupal::classResolver(DomainAvailabilityThemePreprocess::class)->preprocessResults($variables);
 }
 
 /**

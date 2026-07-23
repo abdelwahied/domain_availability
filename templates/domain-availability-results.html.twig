@@ -19,17 +19,19 @@
  */
 #}
 <div class="domain-availability-results">
-  <p class="domain-availability-results__summary">
-    {% trans %}
-      Results for "{{ summary.query }}" — {{ summary.count }} extensions in {{ summary.took_ms }} ms
-    {% endtrans %}
-    {% if summary.cached %}
-      <span class="domain-availability-results__cached">{{ '(cached)'|t }}</span>
-    {% endif %}
-    <span class="domain-availability-results__available-count">
-      {{ '@count available'|t({'@count': summary.available_count}) }}
-    </span>
-  </p>
+  {% if summary is not empty %}
+    <p class="domain-availability-results__summary">
+      {% trans %}
+        Results for "{{ summary.query }}" — {{ summary.count }} extensions in {{ summary.took_ms }} ms
+      {% endtrans %}
+      {% if summary.cached %}
+        <span class="domain-availability-results__cached">{{ '(cached)'|t }}</span>
+      {% endif %}
+      <span class="domain-availability-results__available-count">
+        {{ '@count available'|t({'@count': summary.available_count}) }}
+      </span>
+    </p>
+  {% endif %}
 
   <ul class="domain-availability-results__list">
     {% for result in results %}
