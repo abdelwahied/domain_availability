@@ -69,18 +69,12 @@ jobs:
           # that uses json-schema 5 (the 2.7 series) is blocked by advisories.
           # composer/composer is exercised only by core BuildTests, which this
           # module does not run, so on 10.3 we replace it out to break the knot.
-          EXTRA_REQUIRE=""
           if [[ "${{ inputs.drupal-constraint }}" == '~10.3'* ]]; then
             jq '.replace = ((.replace // {}) + {"composer/composer": "*"})' composer.json > composer.tmp.json
             mv composer.tmp.json composer.json
-            # Drupal 10.3's core-dev otherwise resolves PHPUnit 9.6, which does
-            # not process the PHP 8 test attributes (#[DataProvider],
-            # #[RunTestsInSeparateProcesses], #[CoversClass]) the tests use.
-            # Drupal 10.3 also supports PHPUnit 10.5, which does.
-            EXTRA_REQUIRE="phpunit/phpunit:^10.5"
           fi
           composer require --dev --no-update \
-            "drupal/core-dev:${{ inputs.drupal-constraint }}" "drupal/coder:^8.3" "drush/drush:^12 || ^13" $EXTRA_REQUIRE
+            "drupal/core-dev:${{ inputs.drupal-constraint }}" "drupal/coder:^8.3" "drush/drush:^12 || ^13"
           composer update --no-interaction --prefer-dist --no-progress
 
       - name: Install contrib dependencies (tap_payment only)
