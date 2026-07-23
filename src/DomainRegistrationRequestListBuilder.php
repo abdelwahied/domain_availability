@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\domain_availability;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityListBuilder;
@@ -64,9 +65,9 @@ final class DomainRegistrationRequestListBuilder extends EntityListBuilder imple
   public function __construct(
     EntityTypeInterface $entity_type,
     EntityStorageInterface $storage,
-    private readonly DateFormatterInterface $dateFormatter,
-    private readonly FormBuilderInterface $formBuilder,
-    private readonly LoggerInterface $logger,
+    protected DateFormatterInterface $dateFormatter,
+    protected FormBuilderInterface $formBuilder,
+    protected LoggerInterface $logger,
   ) {
     parent::__construct($entity_type, $storage);
   }
@@ -133,7 +134,10 @@ final class DomainRegistrationRequestListBuilder extends EntityListBuilder imple
   /**
    * {@inheritdoc}
    */
-  public function getDefaultOperations(EntityInterface $entity): array {
+  public function getDefaultOperations(EntityInterface $entity, ?CacheableMetadata $cacheability = NULL): array {
+    // The optional $cacheability parameter matches the signature Drupal 11.3
+    // added; it is not forwarded to the parent so the override stays compatible
+    // with the single-argument parent on Drupal 10.3.
     $operations = parent::getDefaultOperations($entity);
 
     if ($entity->access('view') && $entity->hasLinkTemplate('canonical')) {

@@ -162,7 +162,7 @@ final class DomainSanitizer {
    *   The first label.
    */
   private static function firstLabel(string $value): string {
-    $label = explode('.', $value)[0] ?? '';
+    $label = explode('.', $value)[0];
 
     return trim($label);
   }

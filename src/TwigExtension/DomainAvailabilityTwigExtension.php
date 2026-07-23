@@ -47,7 +47,7 @@ final class DomainAvailabilityTwigExtension extends AbstractExtension {
   /**
    * Renders the search component.
    *
-   * @return \Drupal\Component\Render\MarkupInterface|string
+   * @return \Drupal\Component\Render\MarkupInterface
    *   The rendered markup.
    */
   public function renderSearch(): mixed {
@@ -55,10 +55,8 @@ final class DomainAvailabilityTwigExtension extends AbstractExtension {
 
     // renderInIsolation(): the component carries max-age 0, and bubbling that
     // up would make the whole page uncacheable just because a template happens
-    // to call this function.
-    return method_exists($this->renderer, 'renderInIsolation')
-      ? $this->renderer->renderInIsolation($build)
-      : $this->renderer->renderPlain($build);
+    // to call this function. Available on every supported core (Drupal 10.3+).
+    return $this->renderer->renderInIsolation($build);
   }
 
 }

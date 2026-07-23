@@ -15,6 +15,22 @@ type id. Classes marked `@internal` may change in any release.
 
 Nothing yet.
 
+## [1.0.1] — 2026-07-23
+
+### Fixed
+
+- Serialization safety: injected services on the search form, settings form and
+  registration list builder are now `protected` and no longer `readonly`,
+  matching the `DependencySerializationTrait` contract on PHP 8.3.
+- Replaced the deprecated `RendererInterface::renderPlain()` with
+  `renderInIsolation()`.
+- Added the Drupal 11.3 cacheability parameter to the registration list
+  builder's `getDefaultOperations()` override; still compatible with Drupal 10.3.
+- Removed provably-redundant assertions and null-coalesces flagged at PHPStan
+  level 4.
+
+No functional or public API changes.
+
 ## [1.0.0] — 2026-07-22
 
 First release.

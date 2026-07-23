@@ -46,10 +46,10 @@ final class DomainSearchForm extends FormBase {
    *   The module's logger channel.
    */
   public function __construct(
-    private readonly DomainCheckService $checker,
-    private readonly DomainValidator $validator,
-    private readonly RendererInterface $renderer,
-    private readonly LoggerInterface $logger,
+    protected DomainCheckService $checker,
+    protected DomainValidator $validator,
+    protected RendererInterface $renderer,
+    protected LoggerInterface $logger,
   ) {}
 
   /**

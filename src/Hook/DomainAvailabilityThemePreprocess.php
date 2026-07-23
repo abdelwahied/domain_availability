@@ -9,7 +9,6 @@ use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Url;
 use Drupal\domain_availability\Dto\CheckReport;
-use Drupal\domain_availability\Dto\DomainResult;
 use Drupal\domain_availability\Form\DomainRegistrationRequestForm;
 use Drupal\domain_availability\Service\RegistrationSettings;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -75,7 +74,6 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
     $availableCount = 0;
 
     foreach ($report->results as $result) {
-      assert($result instanceof DomainResult);
       $status = $result->status->value;
 
       if ($status === 'available') {
@@ -89,7 +87,7 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
         'available' => $result->status->toAvailability(),
         'provider' => $result->provider,
         'reason' => $result->reason,
-        'label' => $labels[$status] ?? $labels['unknown'],
+        'label' => $labels[$status],
       ];
 
       // The registration button is an optional, self-contained add-on: it only
