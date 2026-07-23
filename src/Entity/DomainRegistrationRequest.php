@@ -23,6 +23,46 @@ use Drupal\user\EntityOwnerTrait;
 /**
  * Defines the domain registration request content entity.
  *
+ * The `@ContentEntityType` annotation below mirrors the `#[ContentEntityType]`
+ * attribute so the entity is discovered on both Drupal 10.3 — whose
+ * EntityTypeManager uses annotation-only discovery — and Drupal 11, whose
+ * attribute discovery finds the attribute and never reads the annotation, so no
+ * deprecation is emitted. The two definitions must stay byte-for-byte in sync.
+ *
+ * @ContentEntityType(
+ *   id = "domain_registration_request",
+ *   label = @Translation("Domain registration request"),
+ *   label_collection = @Translation("Registration requests"),
+ *   label_singular = @Translation("registration request"),
+ *   label_plural = @Translation("registration requests"),
+ *   label_count = @PluralTranslation(
+ *     singular = "@count registration request",
+ *     plural = "@count registration requests"
+ *   ),
+ *   handlers = {
+ *     "storage" = "Drupal\Core\Entity\Sql\SqlContentEntityStorage",
+ *     "view_builder" = "Drupal\Core\Entity\EntityViewBuilder",
+ *     "list_builder" = "Drupal\domain_availability\DomainRegistrationRequestListBuilder",
+ *     "access" = "Drupal\domain_availability\DomainRegistrationRequestAccessControlHandler",
+ *     "form" = {
+ *       "delete" = "Drupal\Core\Entity\ContentEntityDeleteForm"
+ *     }
+ *   },
+ *   base_table = "domain_registration_request",
+ *   admin_permission = "manage domain registration requests",
+ *   entity_keys = {
+ *     "id" = "id",
+ *     "uuid" = "uuid",
+ *     "label" = "domain",
+ *     "owner" = "uid"
+ *   },
+ *   links = {
+ *     "collection" = "/admin/config/system/domain-availability/registration-requests",
+ *     "canonical" = "/admin/config/system/domain-availability/registration-requests/{domain_registration_request}",
+ *     "delete-form" = "/admin/config/system/domain-availability/registration-requests/{domain_registration_request}/delete"
+ *   }
+ * )
+ *
  * @internal
  *   The implementation; type-hint DomainRegistrationRequestInterface.
  */
