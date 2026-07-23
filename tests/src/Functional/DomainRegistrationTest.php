@@ -351,6 +351,9 @@ final class DomainRegistrationTest extends BrowserTestBase {
     }
     $this->submitForm($edit, 'Apply to selected');
 
+    // The action persisted on the site under test; reset the runner's static
+    // entity cache so the reload sees it (Drupal 10 does not clear it for us).
+    $this->storage()->resetCache($ids);
     foreach ($this->storage()->loadMultiple($ids) as $request) {
       self::assertSame(DomainRegistrationRequestInterface::STATUS_APPROVED, $request->getStatus());
     }
@@ -362,6 +365,7 @@ final class DomainRegistrationTest extends BrowserTestBase {
       $edit['requests[' . $id . '][select]'] = TRUE;
     }
     $this->submitForm($edit, 'Apply to selected');
+    $this->storage()->resetCache();
     self::assertCount(2, $this->storage()->loadMultiple());
 
     // A deleter removes them.
@@ -375,6 +379,7 @@ final class DomainRegistrationTest extends BrowserTestBase {
       $edit['requests[' . $id . '][select]'] = TRUE;
     }
     $this->submitForm($edit, 'Apply to selected');
+    $this->storage()->resetCache();
     self::assertCount(0, $this->storage()->loadMultiple());
   }
 
