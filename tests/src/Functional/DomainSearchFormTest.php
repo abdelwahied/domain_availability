@@ -10,6 +10,10 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
  * Tests the search page, the form, the block and the admin settings.
+  *
+  * @group domain_availability
+  *
+  * @runTestsInSeparateProcesses
  */
 #[Group('domain_availability')]
 #[RunTestsInSeparateProcesses]

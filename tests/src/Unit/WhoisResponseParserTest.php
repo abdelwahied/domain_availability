@@ -19,6 +19,11 @@ use PHPUnit\Framework\Attributes\DataProvider;
  * WHOIS has no response schema, so this is where the module's central promise
  * is enforced: a throttled or unreadable reply must resolve to `unknown`, never
  * to `available`.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Service\WhoisResponseParser::parse
+  * @covers \Drupal\domain_availability\Service\WhoisResponseParser::extractReferral
  */
 #[Group('domain_availability')]
 #[CoversMethod(WhoisResponseParser::class, 'parse')]
@@ -62,6 +67,8 @@ final class WhoisResponseParserTest extends UnitTestCase {
    *   The raw WHOIS payload.
    * @param \Drupal\domain_availability\Dto\DomainStatus $expected
    *   The status it must classify to.
+    *
+    * @dataProvider payloadProvider
    */
   #[DataProvider('payloadProvider')]
   public function testParse(string $body, DomainStatus $expected): void {

@@ -16,6 +16,10 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * Uses the stub provider, so which domains are "available" is deterministic and
  * no registry is contacted.
+  *
+  * @group domain_availability
+  *
+  * @runTestsInSeparateProcesses
  */
 #[Group('domain_availability')]
 #[RunTestsInSeparateProcesses]

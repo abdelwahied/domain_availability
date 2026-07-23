@@ -12,6 +12,15 @@ use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests that arbitrary user input is reduced to a bare domain label.
+ *
+ * The `@group` and `@covers` annotations below mirror the PHP attributes so the
+ * suite runs on both PHPUnit 9.6 (Drupal 10.3, which reads annotations) and
+ * PHPUnit 11 (Drupal 11, which reads attributes and, because the attribute is
+ * present, never deprecates the annotation).
+ *
+ * @group domain_availability
+ *
+ * @covers \Drupal\domain_availability\Utility\DomainSanitizer::sanitize
  */
 #[Group('domain_availability')]
 #[CoversMethod(DomainSanitizer::class, 'sanitize')]
@@ -24,6 +33,8 @@ final class DomainSanitizerTest extends UnitTestCase {
    *   The raw user input.
    * @param string $expected
    *   The label it must reduce to.
+   *
+   * @dataProvider inputProvider
    */
   #[DataProvider('inputProvider')]
   public function testSanitize(string $input, string $expected): void {

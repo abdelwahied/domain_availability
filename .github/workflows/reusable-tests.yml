@@ -194,19 +194,14 @@ jobs:
           SYMFONY_DEPRECATIONS_HELPER: disabled
         run: |
           set -euo pipefail
-          # Drupal 10.3 ships PHPUnit 9.6, which does not support the
-          # #[DataProvider] attribute (the method is called with no arguments).
-          # A suite that uses it therefore cannot run on 10.3, and rewriting it
-          # to the @dataProvider annotation would emit deprecations on Drupal 11
-          # (PHPUnit 10/11 removed annotation metadata) — not acceptable. So on
-          # Drupal 10.3 the full suite is skipped for such modules; runtime
-          # compatibility there is proven by the entity step above, and the full
-          # suite runs on Drupal 11. Modules without #[DataProvider] (e.g.
-          # saudi_id_validator) still run PHPUnit on 10.3.
-          if [[ "${{ inputs.drupal-constraint }}" == '~10.3'* ]] && grep -rlqF 'Attributes\DataProvider' "web/modules/custom/${{ inputs.module }}/tests"; then
-            echo "::notice::PHPUnit skipped on Drupal 10.3 for ${{ inputs.module }}: the suite uses the #[DataProvider] attribute, unsupported by the PHPUnit 9.6 that Drupal 10.3 bundles. Runtime + entity CRUD were verified above; the full suite runs on Drupal 11."
-            exit 0
-          fi
+          # The full suite runs on every core version. Each test carries both the
+          # PHPUnit attribute (#[DataProvider], #[Group], #[CoversClass], …) and
+          # the mirror annotation (@dataProvider, @group, @covers, …): PHPUnit 9.6
+          # on Drupal 10.3 reads the annotation, PHPUnit 11 on Drupal 11 reads the
+          # attribute and — because the attribute is present — does not deprecate
+          # the annotation. So the identical suite is exercised on both, with no
+          # deprecation on either. See tests/ dual-metadata and CONTRIBUTING.md.
+          #
           # Absolute paths: tests marked #[RunTestsInSeparateProcesses] fork a
           # subprocess that re-reads the configuration, and on the older PHPUnit
           # shipped with Drupal 10.3 a relative --configuration path is not found

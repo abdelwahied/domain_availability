@@ -14,6 +14,10 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * The stub provider answers, so the contract is tested without depending on a
  * registry being reachable from wherever this suite runs.
+  *
+  * @group domain_availability
+  *
+  * @runTestsInSeparateProcesses
  */
 #[Group('domain_availability')]
 #[RunTestsInSeparateProcesses]
@@ -115,6 +119,8 @@ final class DomainAvailabilityApiTest extends BrowserTestBase {
    *
    * @param string $input
    *   The invalid input.
+    *
+    * @dataProvider invalidInputProvider
    */
   #[DataProvider('invalidInputProvider')]
   public function testValidationErrors(string $input): void {

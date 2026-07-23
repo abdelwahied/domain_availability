@@ -12,6 +12,13 @@ use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests the per-IP quota and throttle.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Service\RateLimiter::hit
+  * @covers \Drupal\domain_availability\Service\RateLimiter::reset
+  *
+  * @runTestsInSeparateProcesses
  */
 #[RunTestsInSeparateProcesses]
 #[Group('domain_availability')]

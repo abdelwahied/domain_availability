@@ -13,6 +13,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests the LDH validation rules.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Validator\DomainValidator::validate
  */
 #[Group('domain_availability')]
 #[CoversMethod(DomainValidator::class, 'validate')]
@@ -38,6 +42,8 @@ final class DomainValidatorTest extends UnitTestCase {
    *
    * @param string $label
    *   The label under test.
+    *
+    * @dataProvider validProvider
    */
   #[DataProvider('validProvider')]
   public function testValid(string $label): void {
@@ -49,6 +55,8 @@ final class DomainValidatorTest extends UnitTestCase {
    *
    * @param string $label
    *   The label under test.
+    *
+    * @dataProvider invalidProvider
    */
   #[DataProvider('invalidProvider')]
   public function testInvalid(string $label): void {

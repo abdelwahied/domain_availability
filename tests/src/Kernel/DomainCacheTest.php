@@ -13,6 +13,16 @@ use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests the Drupal Cache API adapter.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Cache\DomainCache::set
+  * @covers \Drupal\domain_availability\Cache\DomainCache::get
+  * @covers \Drupal\domain_availability\Cache\DomainCache::has
+  * @covers \Drupal\domain_availability\Cache\DomainCache::delete
+  * @covers \Drupal\domain_availability\Cache\DomainCache::invalidateAll
+  *
+  * @runTestsInSeparateProcesses
  */
 #[RunTestsInSeparateProcesses]
 #[Group('domain_availability')]

@@ -14,6 +14,15 @@ use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests provider ordering and fallback chains.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Provider\ProviderRegistry::all
+  * @covers \Drupal\domain_availability\Provider\ProviderRegistry::names
+  * @covers \Drupal\domain_availability\Provider\ProviderRegistry::chainFor
+  * @covers \Drupal\domain_availability\Provider\ProviderRegistry::bestFor
+  * @covers \Drupal\domain_availability\Provider\ProviderRegistry::nextAfter
+  * @covers \Drupal\domain_availability\Provider\ProviderRegistry::add
  */
 #[Group('domain_availability')]
 #[CoversMethod(ProviderRegistry::class, 'all')]

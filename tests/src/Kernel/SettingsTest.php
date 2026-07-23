@@ -13,6 +13,16 @@ use PHPUnit\Framework\Attributes\CoversMethod;
 
 /**
  * Tests default configuration, its schema, and the typed reader.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Service\ModuleSettings::tlds
+  * @covers \Drupal\domain_availability\Service\ModuleSettings::cacheTtl
+  * @covers \Drupal\domain_availability\Service\ModuleSettings::rdapTimeoutMs
+  * @covers \Drupal\domain_availability\Service\ModuleSettings::saudinicEnabled
+  * @covers \Drupal\domain_availability\Service\ModuleSettings::corsAllowedOrigins
+  *
+  * @runTestsInSeparateProcesses
  */
 #[RunTestsInSeparateProcesses]
 #[Group('domain_availability')]

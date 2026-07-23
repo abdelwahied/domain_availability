@@ -13,6 +13,10 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests the registration request entity and settings.
+  *
+  * @group domain_availability
+  *
+  * @runTestsInSeparateProcesses
  */
 #[RunTestsInSeparateProcesses]
 #[Group('domain_availability')]

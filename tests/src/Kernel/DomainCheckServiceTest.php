@@ -16,6 +16,12 @@ use PHPUnit\Framework\Attributes\CoversMethod;
  *
  * Uses the stub provider, so nothing here touches a registry: the test suite
  * must not fail because a WHOIS server is having a bad day.
+  *
+  * @group domain_availability
+  *
+  * @covers \Drupal\domain_availability\Service\DomainCheckService::check
+  *
+  * @runTestsInSeparateProcesses
  */
 #[RunTestsInSeparateProcesses]
 #[Group('domain_availability')]
