@@ -1,0 +1,107 @@
+<?php
+
+/**
+ * @file
+ * Domain availability lookups across many TLDs, in parallel.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\domain_availability\Hook\DomainAvailabilityThemePreprocess;
+use Drupal\domain_availability\Service\RegistrationMailer;
+
+/**
+ * Implements hook_help().
+ */
+function domain_availability_help(string $route_name, RouteMatchInterface $route_match): string {
+  switch ($route_name) {
+    case 'help.page.domain_availability':
+      $output = '<h2>' . t('About') . '</h2>';
+      $output .= '<p>' . t('Checks a domain name across every configured TLD in one parallel sweep, using RDAP where the registry supports it and WHOIS everywhere else.') . '</p>';
+      $output .= '<h3>' . t('Reading the results') . '</h3>';
+      $output .= '<p>' . t('A result is <em>available</em>, <em>registered</em>, or <em>unknown</em>. Unknown means no provider could answer — a throttled registry, an unreachable host, an unparseable reply. It is never a hint that the domain might be free: availability is never guessed, because "available" is the answer a visitor acts on.') . '</p>';
+      $output .= '<h3>' . t('Uses') . '</h3>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('Search page') . '</dt>';
+      $output .= '<dd>' . t('Visit <code>/domain-search</code>.') . '</dd>';
+      $output .= '<dt>' . t('Block') . '</dt>';
+      $output .= '<dd>' . t('Place "Domain availability search" from Block Layout.') . '</dd>';
+      $output .= '<dt>' . t('Template') . '</dt>';
+      $output .= '<dd>' . t('Call <code>{{ domain_availability_search() }}</code> in any Twig template.') . '</dd>';
+      $output .= '<dt>' . t('API') . '</dt>';
+      $output .= '<dd>' . t('<code>GET /domain-check?domain=neixora</code> returns JSON.') . '</dd>';
+      $output .= '</dl>';
+
+      return $output;
+
+    default:
+      return '';
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function domain_availability_theme(): array {
+  return [
+    'domain_availability_results' => [
+      'variables' => [
+        'report' => NULL,
+        'results' => [],
+        'summary' => [],
+      ],
+      'initial preprocess' => DomainAvailabilityThemePreprocess::class . ':preprocessResults',
+    ],
+    'domain_availability_error' => [
+      'variables' => [
+        'message' => '',
+      ],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_mail().
+ *
+ * Builds the confirmation and administrator-notification emails for a new
+ * registration request. Both share the same facts (reference, domain, company,
+ * commercial registration, time); only the framing differs.
+ */
+function domain_availability_mail(string $key, array &$message, array $params): void {
+  $options = ['langcode' => $message['langcode']];
+  $submitted = \Drupal::service('date.formatter')->format((int) ($params['submitted'] ?? 0), 'long');
+
+  $lines = [
+    t('Reference: @ref', ['@ref' => $params['reference'] ?? ''], $options),
+    t('Domain: @domain', ['@domain' => $params['domain'] ?? ''], $options),
+    \Drupal::translation()->formatPlural((int) ($params['registration_years'] ?? 1), 'Registration period: 1 year', 'Registration period: @count years', [], $options),
+    t('Applicant type: @type', [
+      '@type' => ($params['applicant_type'] ?? 'company') === 'individual'
+        ? t('Individual', [], $options)
+        : t('Company', [], $options),
+    ], $options),
+    t('Company (Arabic): @c', ['@c' => $params['company_ar'] ?? ''], $options),
+    t('Company (English): @c', ['@c' => $params['company_en'] ?? ''], $options),
+    t('Commercial registration: @cr', ['@cr' => $params['commercial_registration'] ?? ''], $options),
+    t('Submitted: @time', ['@time' => $submitted], $options),
+  ];
+
+  switch ($key) {
+    case RegistrationMailer::KEY_CONFIRMATION:
+      $message['subject'] = t('Your domain registration request (@ref)', ['@ref' => $params['reference'] ?? ''], $options);
+      $message['body'][] = t('Thank you. Your domain registration request has been received and is pending review.', [], $options);
+      $message['body'][] = implode("\n", array_map('strval', $lines));
+      $message['body'][] = t('Our team will contact you after reviewing the request.', [], $options);
+      break;
+
+    case RegistrationMailer::KEY_ADMIN_NOTIFICATION:
+      $message['subject'] = t('New domain registration request: @domain (@ref)', [
+        '@domain' => $params['domain'] ?? '',
+        '@ref' => $params['reference'] ?? '',
+      ], $options);
+      $message['body'][] = t('A new domain registration request has been submitted.', [], $options);
+      $message['body'][] = implode("\n", array_map('strval', $lines));
+      break;
+  }
+}

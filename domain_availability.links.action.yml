@@ -1,0 +1,5 @@
+domain_availability.registration_settings_action:
+  route_name: domain_availability.registration_settings
+  title: 'Registration settings'
+  appears_on:
+    - entity.domain_registration_request.collection

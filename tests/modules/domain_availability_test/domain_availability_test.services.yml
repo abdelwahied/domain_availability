@@ -1,0 +1,7 @@
+services:
+  # Priority 1000: collected first, and its own priority() (0) puts it ahead of
+  # every real provider, so no test can reach the network by accident.
+  domain_availability_test.provider:
+    class: Drupal\domain_availability_test\Provider\StubProvider
+    tags:
+      - { name: domain_availability_provider, priority: 1000 }

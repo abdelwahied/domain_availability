@@ -1,0 +1,108 @@
+domain_availability.api_check:
+  path: '/domain-check'
+  defaults:
+    _controller: '\Drupal\domain_availability\Controller\DomainApiController::check'
+    _title: 'Domain availability API'
+  methods: [GET, OPTIONS]
+  requirements:
+    _permission: 'use domain availability api'
+  options:
+    no_cache: TRUE
+
+domain_availability.api_health:
+  path: '/domain-check/health'
+  defaults:
+    _controller: '\Drupal\domain_availability\Controller\DomainApiController::health'
+    _title: 'Domain availability health'
+  methods: [GET]
+  requirements:
+    _permission: 'use domain availability api'
+  options:
+    no_cache: TRUE
+
+domain_availability.search:
+  path: '/domain-search'
+  defaults:
+    _controller: '\Drupal\domain_availability\Controller\DomainSearchController::page'
+    _title: 'Find your perfect domain'
+  requirements:
+    _permission: 'access domain availability search'
+
+domain_availability.settings:
+  path: '/admin/config/system/domain-availability'
+  defaults:
+    _form: '\Drupal\domain_availability\Form\SettingsForm'
+    _title: 'Domain Availability'
+  requirements:
+    _permission: 'administer domain availability'
+
+# --- Domain registration requests -------------------------------------------
+
+# Public modal form that opens from an available result card.
+domain_availability.registration_request.form:
+  path: '/domain-availability/register/{domain}'
+  defaults:
+    _controller: '\Drupal\domain_availability\Controller\DomainRegistrationController::registerForm'
+    _title: 'Register this domain'
+  requirements:
+    _custom_access: '\Drupal\domain_availability\Controller\DomainRegistrationController::registerAccess'
+    domain: '[A-Za-z0-9\.\-]+'
+  options:
+    no_cache: TRUE
+
+# Registration feature settings.
+domain_availability.registration_settings:
+  path: '/admin/config/system/domain-availability/registration-settings'
+  defaults:
+    _form: '\Drupal\domain_availability\Form\RegistrationSettingsForm'
+    _title: 'Registration settings'
+  requirements:
+    _permission: 'administer domain availability'
+
+# Admin collection (entity list).
+entity.domain_registration_request.collection:
+  path: '/admin/config/system/domain-availability/registration-requests'
+  defaults:
+    _entity_list: 'domain_registration_request'
+    _title: 'Registration requests'
+  requirements:
+    _permission: 'view domain registration requests'
+
+# Admin detail page.
+entity.domain_registration_request.canonical:
+  path: '/admin/config/system/domain-availability/registration-requests/{domain_registration_request}'
+  defaults:
+    _controller: '\Drupal\domain_availability\Controller\DomainRegistrationController::detail'
+    _title_callback: '\Drupal\domain_availability\Controller\DomainRegistrationController::detailTitle'
+  requirements:
+    _entity_access: 'domain_registration_request.view'
+  options:
+    parameters:
+      domain_registration_request:
+        type: 'entity:domain_registration_request'
+
+# Change status (approve / reject / cancel) + notes.
+domain_availability.registration_request.status:
+  path: '/admin/config/system/domain-availability/registration-requests/{domain_registration_request}/status'
+  defaults:
+    _form: '\Drupal\domain_availability\Form\RegistrationStatusForm'
+    _title_callback: '\Drupal\domain_availability\Form\RegistrationStatusForm::title'
+  requirements:
+    _entity_access: 'domain_registration_request.update'
+  options:
+    parameters:
+      domain_registration_request:
+        type: 'entity:domain_registration_request'
+
+# Delete.
+entity.domain_registration_request.delete_form:
+  path: '/admin/config/system/domain-availability/registration-requests/{domain_registration_request}/delete'
+  defaults:
+    _entity_form: 'domain_registration_request.delete'
+    _title: 'Delete registration request'
+  requirements:
+    _entity_access: 'domain_registration_request.delete'
+  options:
+    parameters:
+      domain_registration_request:
+        type: 'entity:domain_registration_request'

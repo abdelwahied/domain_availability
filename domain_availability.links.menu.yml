@@ -1,0 +1,13 @@
+domain_availability.settings:
+  title: 'Domain Availability'
+  description: 'Configure TLDs, lookup providers, caching, rate limiting and logging.'
+  parent: system.admin_config_system
+  route_name: domain_availability.settings
+  weight: 10
+
+domain_availability.registration_requests:
+  title: 'Registration requests'
+  description: 'Review domain registration requests submitted by visitors.'
+  parent: system.admin_config_system
+  route_name: entity.domain_registration_request.collection
+  weight: 11

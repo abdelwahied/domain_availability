@@ -1,0 +1,170 @@
+/**
+ * @file
+ * Domain availability styles.
+ *
+ * Theme-agnostic on purpose: no colour is hardcoded that a theme cannot
+ * override, and everything reads from custom properties. Logical properties
+ * (inline-start/end) keep RTL and LTR sharing one stylesheet — the module is
+ * meant for bilingual sites, so direction is a first-class concern, not a
+ * retrofit.
+ */
+
+.domain-availability-form__input {
+  /* A domain label is always ASCII: keep it LTR even inside an RTL interface. */
+  direction: ltr;
+  text-align: start;
+}
+
+.domain-availability-results__summary {
+  margin-block: 1rem;
+}
+
+.domain-availability-results__available-count {
+  color: var(--domain-availability-color-available, #1a7f37);
+  font-weight: 600;
+}
+
+.domain-availability-results__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.domain-availability-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--domain-availability-border, #d3d8de);
+  border-radius: 0.5rem;
+  background: var(--domain-availability-bg, #fff);
+}
+
+.domain-availability-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.domain-availability-card--available {
+  border-inline-start: 4px solid var(--domain-availability-color-available, #1a7f37);
+}
+
+.domain-availability-card--registered {
+  border-inline-start: 4px solid var(--domain-availability-color-registered, #d92d20);
+}
+
+.domain-availability-card--unknown {
+  border-inline-start: 4px solid var(--domain-availability-color-unknown, #6c757d);
+}
+
+.domain-availability-card__name {
+  /* Domains are ASCII: isolate them so an RTL context cannot reorder the dots.
+     min-width:0 lets the flex item shrink and wrap as a whole label; overflow-wrap
+     only breaks a name that is itself wider than the card, never mid-word under
+     normal flex pressure. */
+  flex: 1 1 auto;
+  min-width: 0;
+  direction: ltr;
+  unicode-bidi: isolate;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.domain-availability-card__meta {
+  flex: 0 0 auto;
+  font-size: 0.8125rem;
+  color: var(--domain-availability-color-muted, #6c757d);
+}
+
+.domain-availability-card__badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.domain-availability-card__badge--available {
+  background: var(--domain-availability-color-available, #1a7f37);
+}
+
+.domain-availability-card__badge--registered {
+  background: var(--domain-availability-color-registered, #d92d20);
+}
+
+.domain-availability-card__badge--unknown {
+  background: var(--domain-availability-color-unknown, #6c757d);
+}
+
+.domain-availability-error {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--domain-availability-color-registered, #d92d20);
+}
+
+.domain-availability-card--new {
+  animation: domain-availability-in 0.3s ease both;
+}
+
+@keyframes domain-availability-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Honour the OS reduced-motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  .domain-availability-card--new {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  /* Colour is never the only signal: in forced-colors mode the badge text
+     still names the status, and the border keeps the card readable. */
+  .domain-availability-card__badge {
+    border: 1px solid currentColor;
+  }
+}
+
+/* Registration button on an available card: its own full-width row beneath the
+   header, so a long label neither squeezes the domain name nor clips. */
+.domain-availability-card__register {
+  display: block;
+  text-align: center;
+  font-size: 0.875rem;
+  white-space: normal;
+}
+
+.domain-availability-card__submitted {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--domain-availability-color-available, #1a7f37);
+}
+
+/* Registration modal: keep the title on the dialog's scale instead of inheriting
+   a theme's oversized heading, and let it wrap rather than truncate. */
+.ui-dialog.domain-availability-register-dialog .ui-dialog-title {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.domain-registration-detail__table th {
+  inline-size: 14rem;
+  text-align: start;
+  vertical-align: top;
+}

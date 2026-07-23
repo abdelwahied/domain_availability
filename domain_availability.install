@@ -1,0 +1,177 @@
+<?php
+
+/**
+ * @file
+ * Install, update and requirements hooks for Domain Availability.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\domain_availability\Entity\DomainRegistrationRequestInterface;
+
+/**
+ * Implements hook_requirements().
+ *
+ * Surfaces WHOIS egress on the status report. This is the single most useful
+ * thing an administrator can know about this module: a blocked outbound port 43
+ * is invisible from the outside and is the usual reason a WHOIS-only TLD such
+ * as .sa reports "unknown" forever. Checking it here means nobody has to SSH in
+ * and run nc to find out.
+ * Runtime only: an install-time socket probe would make installing the module
+ * depend on a third-party registry answering.
+ *
+ * Kept for Drupal 10.3, which has no OOP hooks. On Drupal 11.3 and later the
+ * attribute below stops this from running, and
+ * \Drupal\domain_availability\Hook\DomainAvailabilityRequirements answers
+ * instead — so the check happens exactly once on every supported version.
+ */
+#[LegacyRequirementsHook]
+function domain_availability_requirements(string $phase): array {
+  $requirements = [];
+
+  if ($phase !== 'runtime') {
+    return $requirements;
+  }
+
+  if (!function_exists('stream_socket_client')) {
+    $requirements['domain_availability_sockets'] = [
+      'title' => new TranslatableMarkup('Domain Availability: sockets'),
+      'value' => new TranslatableMarkup('stream_socket_client() is unavailable'),
+      'description' => new TranslatableMarkup('WHOIS speaks raw TCP on port 43, so WHOIS-only TLDs cannot be checked. RDAP-backed TLDs still work.'),
+      'severity' => REQUIREMENT_WARNING,
+    ];
+  }
+
+  // Probe WHOIS egress through the module's own service, so the status report
+  // and /domain-check/health always agree on what is reachable.
+  $statusReport = \Drupal::service('domain_availability.status_report');
+  $egress = $statusReport->whoisEgress();
+
+  if ($egress === []) {
+    return $requirements;
+  }
+
+  $reachable = [];
+  $blocked = [];
+
+  foreach ($egress as $tld => $result) {
+    if ($result['reachable'] === TRUE) {
+      $reachable[] = new TranslatableMarkup('@tld via @address (@latency ms)', [
+        '@tld' => $tld,
+        '@address' => $result['address'] ?? '',
+        '@latency' => $result['latency_ms'] ?? 0,
+      ]);
+    }
+    else {
+      $blocked[] = new TranslatableMarkup('@tld (@server): @error', [
+        '@tld' => $tld,
+        '@server' => $result['server'] ?? '',
+        '@error' => $result['error'] ?? 'unreachable',
+      ]);
+    }
+  }
+
+  $requirements['domain_availability_whois_egress'] = [
+    'title' => new TranslatableMarkup('Domain Availability: WHOIS egress'),
+    'value' => $blocked === []
+      ? new TranslatableMarkup('Port 43 reachable')
+      : new TranslatableMarkup('Port 43 blocked for @count TLD(s)', ['@count' => count($blocked)]),
+    // A warning, never an error: a blocked port is a degraded lookup, not a
+    // broken site. RDAP still answers for most TLDs.
+    'severity' => $blocked === [] ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+    'description' => $blocked === []
+      ? new TranslatableMarkup('WHOIS-only TLDs resolve normally: @list', [
+        '@list' => implode(', ', array_map('strval', $reachable)),
+      ])
+      : new TranslatableMarkup('These TLDs will report "unknown" instead of "available": @list. Open outbound TCP port 43, or enable the authoritative provider on the settings page.', [
+        '@list' => implode('; ', array_map('strval', $blocked)),
+      ]),
+  ];
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function domain_availability_uninstall(): void {
+  // The cache bin is dropped by core; the rate-limit counters are ours to
+  // clean up, and leaving IP hashes behind after an uninstall would be rude.
+  \Drupal::keyValueExpirable('domain_availability.rate_limit')->deleteAll();
+}
+
+/**
+ * Installs the domain registration request feature.
+ *
+ * On a fresh install the entity type and default config arrive automatically;
+ * this update brings them to sites that already had the module before the
+ * registration feature existed.
+ */
+function domain_availability_update_10001(): string {
+  $definition = \Drupal::entityTypeManager()->getDefinition('domain_registration_request');
+  \Drupal::entityDefinitionUpdateManager()->installEntityType($definition);
+
+  // Import the default registration settings if they are not present yet.
+  $config = \Drupal::configFactory()->getEditable('domain_availability.registration');
+
+  if ($config->isNew()) {
+    $config
+      ->set('enabled', TRUE)
+      ->set('allowed_tlds', ['sa'])
+      ->set('max_upload_size', 10)
+      ->set('allowed_extensions', 'pdf')
+      ->set('admin_emails', '')
+      ->set('duplicate_window_hours', 24)
+      ->save();
+  }
+
+  return (string) t('Installed the domain registration request entity and settings.');
+}
+
+/**
+ * Adds the registration period field to existing registration requests.
+ */
+function domain_availability_update_10002(): string {
+  $field = BaseFieldDefinition::create('integer')
+    ->setLabel(t('Registration period (years)'))
+    ->setDescription(t('How many years the domain should be reserved for.'))
+    ->setRequired(TRUE)
+    ->setSetting('min', 1)
+    ->setSetting('max', 10)
+    ->setDefaultValue(1);
+
+  \Drupal::entityDefinitionUpdateManager()
+    ->installFieldStorageDefinition('registration_years', 'domain_registration_request', 'domain_availability', $field);
+
+  return (string) t('Added the registration period field.');
+}
+
+/**
+ * Adds the applicant type field to existing registration requests.
+ */
+function domain_availability_update_10003(): string {
+  $field = BaseFieldDefinition::create('list_string')
+    ->setLabel(t('Applicant type'))
+    ->setDescription(t('Whether the request is made by an individual or a company.'))
+    ->setRequired(TRUE)
+    ->setSetting('allowed_values', [
+      DomainRegistrationRequestInterface::APPLICANT_INDIVIDUAL => 'Individual',
+      DomainRegistrationRequestInterface::APPLICANT_COMPANY => 'Company',
+    ])
+    ->setDefaultValue(DomainRegistrationRequestInterface::APPLICANT_COMPANY);
+
+  \Drupal::entityDefinitionUpdateManager()
+    ->installFieldStorageDefinition('applicant_type', 'domain_registration_request', 'domain_availability', $field);
+
+  // Rows that predate the field were all company requests: that was the only
+  // shape the form could produce.
+  \Drupal::database()->update('domain_registration_request')
+    ->fields(['applicant_type' => DomainRegistrationRequestInterface::APPLICANT_COMPANY])
+    ->isNull('applicant_type')
+    ->execute();
+
+  return (string) t('Added the applicant type field.');
+}

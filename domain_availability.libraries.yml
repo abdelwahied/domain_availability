@@ -1,0 +1,22 @@
+search:
+  version: 1.0.0
+  css:
+    component:
+      css/domain-availability.css: {}
+  js:
+    js/domain-availability.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings
+    - core/drupal.ajax
+    - core/drupal.dialog.ajax
+
+registration_form:
+  version: 1.0.0
+  js:
+    js/domain-availability-registration.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings

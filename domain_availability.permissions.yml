@@ -1,0 +1,28 @@
+'access domain availability search':
+  title: 'Access the domain search page'
+  description: 'View the search page and run availability lookups through the form.'
+
+'use domain availability api':
+  title: 'Use the domain availability API'
+  description: 'Call the JSON endpoint directly. Every lookup fans out to ~20 registries, so grant this only to trusted roles.'
+  restrict access: true
+
+'administer domain availability':
+  title: 'Administer domain availability'
+  description: 'Configure TLDs, providers, caching, rate limiting and logging.'
+  restrict access: true
+
+'view domain registration requests':
+  title: 'View domain registration requests'
+  description: 'See submitted registration requests and their details. These records contain personal data (national ID, certificate), so grant carefully.'
+  restrict access: true
+
+'manage domain registration requests':
+  title: 'Manage domain registration requests'
+  description: 'Change the status of registration requests and edit their notes.'
+  restrict access: true
+
+'delete domain registration requests':
+  title: 'Delete domain registration requests'
+  description: 'Permanently delete registration requests.'
+  restrict access: true

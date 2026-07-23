@@ -1,0 +1,49 @@
+tlds:
+  - sa
+  - com
+  - net
+  - org
+  - io
+  - ai
+  - co
+  - app
+  - dev
+  - cloud
+  - store
+  - shop
+  - online
+  - tech
+  - site
+  - xyz
+  - live
+  - digital
+  - me
+  - info
+cache_enabled: true
+cache_ttl: 600
+rdap_enabled: true
+whois_enabled: true
+dns_fallback_enabled: true
+max_lookup_time: 15
+parallel_requests: 20
+rdap_timeout_ms: 3000
+rdap_connect_timeout_ms: 2000
+whois_timeout_ms: 2500
+whois_connect_timeout_ms: 1500
+whois_address_family: ipv4
+whois_dns_ttl: 300
+rate_limit_enabled: true
+rate_limit_max_requests: 30
+rate_limit_window: 60
+rate_limit_min_interval: 1
+logging_enabled: true
+log_level: warning
+debug: false
+cors_allowed_origins: ''
+saudinic_enabled: false
+saudinic_endpoint: 'https://api.whoisfreaks.com/v2.0/domain/availability'
+saudinic_api_key: ''
+saudinic_tlds:
+  - sa
+health_probe_tlds:
+  - sa

@@ -1,0 +1,7 @@
+enabled: true
+allowed_tlds:
+  - sa
+max_upload_size: 10
+allowed_extensions: 'pdf'
+admin_emails: ''
+duplicate_window_hours: 24

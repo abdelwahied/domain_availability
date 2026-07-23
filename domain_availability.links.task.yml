@@ -1,0 +1,4 @@
+domain_availability.settings_tab:
+  title: 'Settings'
+  route_name: domain_availability.settings
+  base_route: domain_availability.settings

@@ -1,0 +1,120 @@
+domain_availability.settings:
+  type: config_object
+  label: 'Domain Availability settings'
+  mapping:
+    tlds:
+      type: sequence
+      label: 'Enabled TLDs'
+      sequence:
+        type: string
+        label: 'TLD'
+    cache_enabled:
+      type: boolean
+      label: 'Enable result caching'
+    cache_ttl:
+      type: integer
+      label: 'Cache duration in seconds'
+    rdap_enabled:
+      type: boolean
+      label: 'Enable RDAP lookups'
+    whois_enabled:
+      type: boolean
+      label: 'Enable WHOIS lookups'
+    dns_fallback_enabled:
+      type: boolean
+      label: 'Enable the DNS delegation fallback'
+    max_lookup_time:
+      type: integer
+      label: 'Maximum total lookup time in seconds'
+    parallel_requests:
+      type: integer
+      label: 'Maximum parallel requests per batch'
+    rdap_timeout_ms:
+      type: integer
+      label: 'RDAP total timeout in milliseconds'
+    rdap_connect_timeout_ms:
+      type: integer
+      label: 'RDAP connect timeout in milliseconds'
+    whois_timeout_ms:
+      type: integer
+      label: 'WHOIS total timeout in milliseconds'
+    whois_connect_timeout_ms:
+      type: integer
+      label: 'WHOIS per-address connect timeout in milliseconds'
+    whois_address_family:
+      type: string
+      label: 'WHOIS address family preference'
+    whois_dns_ttl:
+      type: integer
+      label: 'Resolved WHOIS host address cache lifetime in seconds'
+    rate_limit_enabled:
+      type: boolean
+      label: 'Enable per-IP rate limiting'
+    rate_limit_max_requests:
+      type: integer
+      label: 'Requests allowed per window'
+    rate_limit_window:
+      type: integer
+      label: 'Rate limit window in seconds'
+    rate_limit_min_interval:
+      type: integer
+      label: 'Minimum seconds between two requests'
+    logging_enabled:
+      type: boolean
+      label: 'Enable logging'
+    log_level:
+      type: string
+      label: 'Minimum log level'
+    debug:
+      type: boolean
+      label: 'Debug mode'
+    cors_allowed_origins:
+      type: string
+      label: 'Allowed CORS origins'
+    saudinic_enabled:
+      type: boolean
+      label: 'Enable the authoritative provider'
+    saudinic_endpoint:
+      type: string
+      label: 'Authoritative provider endpoint'
+    saudinic_api_key:
+      type: string
+      label: 'Authoritative provider API key'
+    saudinic_tlds:
+      type: sequence
+      label: 'TLDs the authoritative provider answers for'
+      sequence:
+        type: string
+        label: 'TLD'
+    health_probe_tlds:
+      type: sequence
+      label: 'TLDs probed for WHOIS egress on the status report'
+      sequence:
+        type: string
+        label: 'TLD'
+
+domain_availability.registration:
+  type: config_object
+  label: 'Domain registration request settings'
+  mapping:
+    enabled:
+      type: boolean
+      label: 'Enable registration requests'
+    allowed_tlds:
+      type: sequence
+      label: 'TLDs that accept registration requests'
+      sequence:
+        type: string
+        label: 'TLD'
+    max_upload_size:
+      type: integer
+      label: 'Maximum upload size in megabytes'
+    allowed_extensions:
+      type: string
+      label: 'Allowed file extensions'
+    admin_emails:
+      type: string
+      label: 'Administrator notification emails'
+    duplicate_window_hours:
+      type: integer
+      label: 'Duplicate submission window in hours'

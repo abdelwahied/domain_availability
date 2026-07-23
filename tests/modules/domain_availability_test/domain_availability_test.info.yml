@@ -1,0 +1,7 @@
+name: 'Domain Availability test'
+type: module
+description: 'Provides a deterministic lookup provider so tests never touch a real registry.'
+package: Testing
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - domain_availability:domain_availability

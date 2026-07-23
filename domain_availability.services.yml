@@ -1,0 +1,342 @@
+parameters:
+  # Protocol facts, not site settings: which host speaks WHOIS for a TLD, and
+  # how each registry words "no such domain". They live here rather than in
+  # config because a site never needs to tune them, but a site that must (a new
+  # registry, a changed wording) can override any of them from its own
+  # sites/default/services.yml without patching the module.
+  #
+  # Verified against IANA's own records (`whois -h whois.iana.org <tld>`).
+  # TLDs absent from this list on purpose: .app, .dev (Google), .live, .digital,
+  # .info (Identity Digital) publish no WHOIS host at all — they are RDAP-only.
+  # Inventing a whois.nic.<tld> for those only buys a failed DNS lookup on every
+  # request. Unlisted TLDs are discovered through whois.iana.org at runtime.
+  domain_availability.whois_servers:
+    sa: whois.nic.net.sa
+    com: whois.verisign-grs.com
+    net: whois.verisign-grs.com
+    org: whois.publicinterestregistry.org
+    io: whois.nic.io
+    ai: whois.nic.ai
+    co: whois.registry.co
+    cloud: whois.nic.cloud
+    store: whois.nic.store
+    shop: whois.nic.shop
+    online: whois.nic.online
+    tech: whois.nic.tech
+    site: whois.nic.site
+    xyz: whois.nic.xyz
+    me: whois.nic.me
+
+  # Per-server query overrides; %s is the domain. Verisign needs the explicit
+  # `domain ` keyword to return an exact match instead of a fuzzy search.
+  domain_availability.whois_query_formats:
+    whois.verisign-grs.com: "domain %s\r\n"
+
+  domain_availability.whois_iana_server: whois.iana.org
+  domain_availability.whois_discovery_ttl: 604800
+
+  # Case-insensitive markers meaning "this domain is not registered".
+  domain_availability.whois_available_patterns:
+    - 'no match for'
+    - 'no match'
+    - 'not found'
+    - 'no data found'
+    - 'no entries found'
+    - 'no object found'
+    - 'domain not found'
+    - 'nothing found'
+    - 'status: free'
+    - 'status: available'
+    - 'object does not exist'
+    - 'the queried object does not exist'
+    - 'domain status: no object found'
+    - 'no information available about domain name'
+    - 'is available for registration'
+    - 'available for registration'
+
+  # Markers meaning "this domain exists". Checked only after the availability
+  # markers, which take precedence.
+  domain_availability.whois_registered_patterns:
+    - 'domain name:'
+    - 'domain:'
+    - 'registrar:'
+    - 'creation date:'
+    - 'created:'
+    - 'registered on:'
+    - 'registry domain id:'
+    - 'name server:'
+    - 'nserver:'
+    - 'status: active'
+    - 'registrant:'
+
+  # Markers meaning the registry refused to answer (throttling, blocking).
+  # These MUST resolve to `unknown` — never to `available`. A "query limit
+  # exceeded" body contains none of the registration markers above and would
+  # otherwise read as "this domain is free", which is the one mistake this
+  # module must never make.
+  domain_availability.whois_rate_limit_patterns:
+    - 'rate limit'
+    - 'exceeded'
+    - 'too many requests'
+    - 'try again later'
+    - 'quota'
+    - 'query limit'
+    - 'access denied'
+    - 'connection refused'
+    - 'temporarily unavailable'
+    - 'service unavailable'
+    - 'blocked'
+    - 'you have been banned'
+    - 'wsc: this ip'
+
+  # IANA publishes the authoritative RDAP endpoint list; it is fetched at
+  # runtime and cached for a week, so newly delegated TLDs work without a code
+  # change. The fallback map below is used ONLY when that fetch fails — when the
+  # bootstrap loads it is used alone, because IANA is the authority on which
+  # TLDs have RDAP at all (.sa, .io, .co and .me have none, and inventing an
+  # endpoint for them would fail on every request instead of going to WHOIS).
+  domain_availability.rdap_bootstrap_url: 'https://data.iana.org/rdap/dns.json'
+  domain_availability.rdap_bootstrap_ttl: 604800
+  domain_availability.rdap_fallback_servers:
+    com: 'https://rdap.verisign.com/com/v1/'
+    net: 'https://rdap.verisign.com/net/v1/'
+    org: 'https://rdap.publicinterestregistry.org/rdap/'
+    app: 'https://www.registry.google/rdap/'
+    dev: 'https://www.registry.google/rdap/'
+    cloud: 'https://rdap.nic.cloud/'
+    store: 'https://rdap.centralnic.com/store/'
+    shop: 'https://rdap.nic.shop/'
+    online: 'https://rdap.centralnic.com/online/'
+    tech: 'https://rdap.centralnic.com/tech/'
+    site: 'https://rdap.centralnic.com/site/'
+    xyz: 'https://rdap.centralnic.com/xyz/'
+    live: 'https://rdap.identitydigital.services/rdap/'
+    digital: 'https://rdap.identitydigital.services/rdap/'
+    info: 'https://rdap.identitydigital.services/rdap/'
+  domain_availability.rdap_excluded_tlds: []
+
+  # How to read the authoritative vendor's verdict. Defaults match WhoisFreaks'
+  # documented contract; any vendor answering with a flat JSON verdict field
+  # fits by overriding these. Values are matched case-insensitively, and
+  # anything unlisted resolves to `unknown` — an unrecognised verdict means the
+  # contract changed, and guessing at it is how a registered domain gets
+  # reported as available.
+  domain_availability.authoritative_response_map:
+    field: availability
+    available: ['AVAILABLE', 'FREE', 'TRUE']
+    registered: ['UNAVAILABLE', 'REGISTERED', 'TAKEN', 'FALSE']
+  domain_availability.authoritative_domain_param: domain
+  domain_availability.authoritative_key_param: apiKey
+  # Set to a header name (e.g. X-Api-Key) if the vendor accepts the key as a
+  # header — it then stays out of their access logs.
+  domain_availability.authoritative_key_header: ~
+
+services:
+  # --- Infrastructure -------------------------------------------------------
+
+  # The module's own cache bin. Bind it to Redis/Memcache in settings.php and
+  # every lookup follows, with no change here.
+  cache.domain_availability:
+    class: Drupal\Core\Cache\CacheBackendInterface
+    tags:
+      - { name: cache.bin }
+    factory: ['@cache_factory', 'get']
+    arguments: [domain_availability]
+
+  logger.channel.domain_availability:
+    parent: logger.channel_base
+    arguments: ['domain_availability']
+
+  domain_availability.settings:
+    class: Drupal\domain_availability\Service\ModuleSettings
+    arguments: ['@config.factory']
+
+  domain_availability.cache:
+    class: Drupal\domain_availability\Cache\DomainCache
+    arguments:
+      - '@cache.domain_availability'
+      - '@cache_tags.invalidator'
+      - '@datetime.time'
+
+  domain_availability.http_client:
+    class: Drupal\domain_availability\Service\ParallelHttpClient
+    arguments:
+      - '@http_client'
+      - '@domain_availability.settings'
+
+  domain_availability.host_resolver:
+    class: Drupal\domain_availability\Service\HostResolver
+    arguments:
+      - '@domain_availability.cache'
+      - '@logger.channel.domain_availability'
+      - '@domain_availability.settings'
+
+  # --- Lookup plumbing ------------------------------------------------------
+
+  domain_availability.whois_client:
+    class: Drupal\domain_availability\Service\WhoisClient
+    arguments:
+      - '@domain_availability.host_resolver'
+      - '@domain_availability.settings'
+
+  domain_availability.whois_parser:
+    class: Drupal\domain_availability\Service\WhoisResponseParser
+    arguments:
+      - '%domain_availability.whois_available_patterns%'
+      - '%domain_availability.whois_registered_patterns%'
+      - '%domain_availability.whois_rate_limit_patterns%'
+
+  domain_availability.whois_server_resolver:
+    class: Drupal\domain_availability\Service\WhoisServerResolver
+    arguments:
+      - '%domain_availability.whois_servers%'
+      - '@domain_availability.whois_client'
+      - '@domain_availability.whois_parser'
+      - '@domain_availability.cache'
+      - '@logger.channel.domain_availability'
+      - '%domain_availability.whois_iana_server%'
+      - '%domain_availability.whois_discovery_ttl%'
+
+  domain_availability.rdap_registry_resolver:
+    class: Drupal\domain_availability\Service\RdapRegistryResolver
+    arguments:
+      - '@domain_availability.http_client'
+      - '@domain_availability.cache'
+      - '@logger.channel.domain_availability'
+      - '%domain_availability.rdap_bootstrap_url%'
+      - '%domain_availability.rdap_fallback_servers%'
+      - '%domain_availability.rdap_excluded_tlds%'
+      - '%domain_availability.rdap_bootstrap_ttl%'
+
+  domain_availability.whois_probe:
+    class: Drupal\domain_availability\Service\WhoisReachabilityProbe
+    arguments:
+      - '@domain_availability.cache'
+      - '@domain_availability.host_resolver'
+      - '@domain_availability.settings'
+
+  # --- Providers ------------------------------------------------------------
+  #
+  # Each is tagged domain_availability_provider and collected by the registry,
+  # so adding a protocol is one class plus one tagged service: no controller,
+  # service or registry change. Priority is the provider's own priority()
+  # method — the tag priority only orders collection.
+
+  domain_availability.provider.authoritative:
+    class: Drupal\domain_availability\Provider\SaudiNicProvider
+    arguments:
+      - '@domain_availability.http_client'
+      - '@logger.channel.domain_availability'
+      - '@domain_availability.settings'
+      - '%domain_availability.authoritative_response_map%'
+      - '%domain_availability.authoritative_domain_param%'
+      - '%domain_availability.authoritative_key_param%'
+      - '%domain_availability.authoritative_key_header%'
+    tags:
+      - { name: domain_availability_provider, priority: 100 }
+
+  domain_availability.provider.rdap:
+    class: Drupal\domain_availability\Provider\RdapProvider
+    arguments:
+      - '@domain_availability.http_client'
+      - '@domain_availability.rdap_registry_resolver'
+      - '@logger.channel.domain_availability'
+      - '@domain_availability.settings'
+    tags:
+      - { name: domain_availability_provider, priority: 90 }
+
+  domain_availability.provider.whois:
+    class: Drupal\domain_availability\Provider\WhoisProvider
+    arguments:
+      - '@domain_availability.whois_client'
+      - '@domain_availability.whois_server_resolver'
+      - '@domain_availability.whois_parser'
+      - '@logger.channel.domain_availability'
+      - '@domain_availability.settings'
+      - '%domain_availability.whois_query_formats%'
+    tags:
+      - { name: domain_availability_provider, priority: 80 }
+
+  domain_availability.provider.dns:
+    class: Drupal\domain_availability\Provider\DnsProvider
+    arguments:
+      - '@logger.channel.domain_availability'
+      - '@domain_availability.settings'
+    tags:
+      - { name: domain_availability_provider, priority: 70 }
+
+  domain_availability.provider_registry:
+    class: Drupal\domain_availability\Provider\ProviderRegistry
+    arguments:
+      - !tagged_iterator domain_availability_provider
+
+  # --- Application services -------------------------------------------------
+
+  domain_availability.checker:
+    class: Drupal\domain_availability\Service\DomainCheckService
+    arguments:
+      - '@domain_availability.provider_registry'
+      - '@domain_availability.cache'
+      - '@logger.channel.domain_availability'
+      - '@domain_availability.settings'
+
+  domain_availability.validator:
+    class: Drupal\domain_availability\Validator\DomainValidator
+
+  domain_availability.rate_limiter:
+    class: Drupal\domain_availability\Service\RateLimiter
+    arguments:
+      - '@keyvalue.expirable'
+      - '@lock'
+      - '@datetime.time'
+      - '@domain_availability.settings'
+
+  domain_availability.status_report:
+    class: Drupal\domain_availability\Service\StatusReportService
+    arguments:
+      - '@domain_availability.provider_registry'
+      - '@domain_availability.whois_probe'
+      - '@domain_availability.whois_server_resolver'
+      - '@domain_availability.settings'
+      - '@datetime.time'
+
+  # --- Presentation ---------------------------------------------------------
+
+  domain_availability.api_response_subscriber:
+    class: Drupal\domain_availability\EventSubscriber\ApiResponseSubscriber
+    arguments:
+      - '@domain_availability.settings'
+      - '@current_route_match'
+    tags:
+      - { name: event_subscriber }
+
+  domain_availability.twig_extension:
+    class: Drupal\domain_availability\TwigExtension\DomainAvailabilityTwigExtension
+    arguments: ['@renderer']
+    tags:
+      - { name: twig.extension }
+
+  # --- Registration requests ------------------------------------------------
+
+  domain_availability.registration_settings:
+    class: Drupal\domain_availability\Service\RegistrationSettings
+    arguments:
+      - '@config.factory'
+
+  domain_availability.registration_mailer:
+    class: Drupal\domain_availability\Service\RegistrationMailer
+    arguments:
+      - '@plugin.manager.mail'
+      - '@domain_availability.registration_settings'
+      - '@logger.channel.domain_availability'
+      - '@language_manager'
+
+  # The OOP requirements hook for Drupal 11.3 and later. The procedural
+  # hook_requirements() in the .install file remains for Drupal 10.3 and is
+  # marked #[LegacyRequirementsHook] so the two never both run.
+  Drupal\domain_availability\Hook\DomainAvailabilityRequirements:
+    autowire: false
+    arguments:
+      - '@domain_availability.status_report'
+    tags:
+      - { name: hooks }

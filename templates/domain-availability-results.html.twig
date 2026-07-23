@@ -1,0 +1,56 @@
+{#
+/**
+ * @file
+ * Domain availability results.
+ *
+ * Available variables:
+ * - report: the CheckReport value object.
+ * - results: list of result rows, each with:
+ *   - domain: the fully qualified domain.
+ *   - extension: the TLD with a leading dot.
+ *   - status: available|registered|unknown.
+ *   - available: true|false|null.
+ *   - provider: the provider that answered.
+ *   - reason: why an unknown result is unknown (optional).
+ * - summary: query, count, available_count, took_ms, cached.
+ *
+ * Every value is escaped by Twig's autoescape. Override this template in your
+ * theme to restyle the results without touching the module.
+ */
+#}
+<div class="domain-availability-results">
+  <p class="domain-availability-results__summary">
+    {% trans %}
+      Results for "{{ summary.query }}" — {{ summary.count }} extensions in {{ summary.took_ms }} ms
+    {% endtrans %}
+    {% if summary.cached %}
+      <span class="domain-availability-results__cached">{{ '(cached)'|t }}</span>
+    {% endif %}
+    <span class="domain-availability-results__available-count">
+      {{ '@count available'|t({'@count': summary.available_count}) }}
+    </span>
+  </p>
+
+  <ul class="domain-availability-results__list">
+    {% for result in results %}
+      <li class="domain-availability-card domain-availability-card--{{ result.status }}">
+        <div class="domain-availability-card__header">
+          <span class="domain-availability-card__name" dir="ltr">{{ result.domain }}</span>
+          <span class="domain-availability-card__meta">
+            {% if result.reason %}
+              {{ 'Registry did not answer'|t }}
+            {% elseif result.provider %}
+              {{ result.provider|upper }}
+            {% endif %}
+          </span>
+          <span class="domain-availability-card__badge domain-availability-card__badge--{{ result.status }}">
+            {{ result.label }}
+          </span>
+        </div>
+        {% if result.register %}
+          {{ result.register }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>

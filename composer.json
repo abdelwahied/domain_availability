@@ -1,0 +1,50 @@
+{
+    "name": "abdelwahied/domain_availability",
+    "description": "Domain availability checker for Drupal 10/11 — parallel RDAP + WHOIS lookups across many TLDs, with an optional Saudi domain registration request workflow.",
+    "type": "drupal-module",
+    "homepage": "https://github.com/abdelwahied/domain_availability",
+    "license": "GPL-2.0-or-later",
+    "keywords": [
+        "drupal",
+        "domain",
+        "availability",
+        "whois",
+        "rdap",
+        "dns",
+        "saudi",
+        "registration"
+    ],
+    "authors": [
+        {
+            "name": "Abdelwahied",
+            "email": "abdelwahied.fx@gmail.com",
+            "role": "Maintainer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/abdelwahied/domain_availability/issues",
+        "source": "https://github.com/abdelwahied/domain_availability",
+        "docs": "https://github.com/abdelwahied/domain_availability/blob/main/API.md",
+        "email": "abdelwahied.fx@gmail.com"
+    },
+    "require": {
+        "php": ">=8.3",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-sockets": "*",
+        "drupal/core": "^10.3 || ^11"
+    },
+    "require-dev": {
+        "drupal/core-dev": "^10.3 || ^11"
+    },
+    "autoload": {
+        "psr-4": {
+            "Drupal\\domain_availability\\": "src/"
+        }
+    },
+    "extra": {
+        "drupal": {
+            "version": "1.0.0"
+        }
+    }
+}
