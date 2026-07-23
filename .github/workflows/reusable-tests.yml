@@ -69,12 +69,18 @@ jobs:
           # that uses json-schema 5 (the 2.7 series) is blocked by advisories.
           # composer/composer is exercised only by core BuildTests, which this
           # module does not run, so on 10.3 we replace it out to break the knot.
+          EXTRA_REQUIRE=""
           if [[ "${{ inputs.drupal-constraint }}" == '~10.3'* ]]; then
             jq '.replace = ((.replace // {}) + {"composer/composer": "*"})' composer.json > composer.tmp.json
             mv composer.tmp.json composer.json
+            # Drupal 10.3's core-dev otherwise resolves PHPUnit 9.6, which does
+            # not process the PHP 8 test attributes (#[DataProvider],
+            # #[RunTestsInSeparateProcesses], #[CoversClass]) the tests use.
+            # Drupal 10.3 also supports PHPUnit 10.5, which does.
+            EXTRA_REQUIRE="phpunit/phpunit:^10.5"
           fi
           composer require --dev --no-update \
-            "drupal/core-dev:${{ inputs.drupal-constraint }}" "drupal/coder:^8.3" "drush/drush:^12 || ^13"
+            "drupal/core-dev:${{ inputs.drupal-constraint }}" "drupal/coder:^8.3" "drush/drush:^12 || ^13" $EXTRA_REQUIRE
           composer update --no-interaction --prefer-dist --no-progress
 
       - name: Install contrib dependencies (tap_payment only)
@@ -117,20 +123,19 @@ jobs:
 
       - name: Start the test web server
         working-directory: drupal
-        env:
-          # Drupal functional tests make requests that themselves trigger a
-          # sub-request to the same server; the single-threaded built-in server
-          # deadlocks on those and returns 500s. Run several worker processes so
-          # concurrent requests are served.
-          PHP_CLI_SERVER_WORKERS: '8'
         run: |
           set -euo pipefail
           mkdir -p web/sites/simpletest/browser_output
           chmod -R 0777 web/sites/simpletest
+          # A single-process server, deliberately: functional tests run one at a
+          # time (each in an isolated process) so no concurrency is needed, and
+          # multiple workers each hold their own cache, which breaks Drupal's
+          # per-test-site isolation and leaks state between tests.
+          #
           # The router path must be absolute: with -t web the server resolves a
           # relative router against the docroot, so "web/.ht.router.php" is not
-          # found and every request returns a 500.
-          PHP_CLI_SERVER_WORKERS=8 nohup php -S 127.0.0.1:8080 -t web "$(pwd)/web/.ht.router.php" > /tmp/php-server.log 2>&1 &
+          # found and every request would return a 500.
+          nohup php -S 127.0.0.1:8080 -t web "$(pwd)/web/.ht.router.php" > /tmp/php-server.log 2>&1 &
           for i in $(seq 1 15); do
             if curl -sSf http://127.0.0.1:8080/core/misc/druplicon.png > /dev/null 2>&1; then break; fi
             sleep 1
