@@ -44,9 +44,9 @@ final class SettingsForm extends ConfigFormBase {
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typedConfigManager,
-    private readonly DomainCacheInterface $cache,
-    private readonly RateLimiter $rateLimiter,
-    private readonly ModuleSettings $settings,
+    protected DomainCacheInterface $cache,
+    protected RateLimiter $rateLimiter,
+    protected ModuleSettings $settings,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
