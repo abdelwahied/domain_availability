@@ -150,4 +150,16 @@ jobs:
           # from the subprocess. $(pwd) is the drupal/ site root here.
           php -d memory_limit=-1 vendor/bin/phpunit \
             -c "$(pwd)/web/core/phpunit.xml.dist" \
-            "$(pwd)/web/modules/custom/${{ inputs.module }}"
+            "$(pwd)/web/modules/custom/${{ inputs.module }}/tests"
+
+      - name: Diagnostics on failure
+        if: failure()
+        working-directory: drupal
+        run: |
+          echo "=== php server log ==="
+          tail -40 /tmp/php-server.log 2>/dev/null || true
+          echo "=== last functional error pages (text) ==="
+          for f in $(ls -t web/sites/simpletest/browser_output/*.html 2>/dev/null | head -2); do
+            echo "----- $f -----"
+            sed -e 's/<[^>]*>/ /g' "$f" | tr -s ' \n' ' \n' | grep -iE "error|exception|not exist|SQLSTATE|does not|fatal|call to|undefined" | head -25
+          done
