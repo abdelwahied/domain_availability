@@ -15,6 +15,52 @@ type id. Classes marked `@internal` may change in any release.
 
 Nothing yet.
 
+## [1.1.1] — 2026-07-27
+
+### Fixed
+
+- **A stalled DNS resolver could end a request in a fatal.** `dns_get_record()`
+  accepts no timeout, so 1.1.0 consulted `LookupBudget` between DNS calls but
+  nothing bounded a call once it had started. A resolver that stopped answering
+  ran the lookup to PHP's `max_execution_time`, which returned HTTP 500 on the
+  page holding the search box rather than a degraded result — and `watchdog`
+  recorded nothing, because the process died before the logger ran. Every other
+  failure in this module degrades to `unknown`; this one did not degrade at all.
+
+  Lookups now go through `BoundedDnsResolver`, a UDP stub resolver that reads
+  the nameservers from `/etc/resolv.conf`, writes the query itself and waits
+  with `stream_select()`. `max_lookup_time` now covers DNS as it already covered
+  WHOIS and RDAP.
+
+- **`DnsProvider` had no budget check at all** and ran up to five queries in a
+  loop on names taken from the public search box, so which authoritative servers
+  the site waited on was the visitor's choice. It now consults the budget before
+  each domain and reports `dns_timeout` separately from
+  `no_delegation_inconclusive` — the first is a fact about the network, the
+  second about the domain, and conflating them is what let a network failure be
+  cached as though it were a fact about the name.
+
+- A resolver that cannot answer at all is now reported on the status report and
+  in `hook_requirements`. Previously only WHOIS egress was surfaced, so the more
+  common outage was invisible.
+
+### Changed
+
+- `whois_dns_ttl` now defaults to 86400 rather than 300. Registry WHOIS
+  addresses change on a scale of years, and five minutes guaranteed that most
+  real searches resolved from cold — which was exactly when the defect above was
+  reachable. `domain_availability_update_10005()` raises it only where it is
+  still the old default; a site that chose its own value keeps it.
+- New `dns_query_timeout_ms` setting (default 1500), a ceiling on a single DNS
+  query, itself clamped to whatever is left of the check budget.
+
+### Upgrade
+
+Run `drush updatedb`. No configuration or API changes.
+
+Reported by the maintainers of grid.sa, with a reproduction and packet-level
+measurements.
+
 ## [1.1.0] — 2026-07-26
 
 ### Added — pricing

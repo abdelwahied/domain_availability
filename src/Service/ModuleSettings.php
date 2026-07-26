@@ -190,7 +190,20 @@ final class ModuleSettings {
    *   The WHOIS host address cache lifetime, in seconds.
    */
   public function whoisDnsTtl(): int {
-    return $this->int('whois_dns_ttl', 300);
+    return $this->int('whois_dns_ttl', 86400);
+  }
+
+  /**
+   * How long one DNS query may wait for an answer.
+   *
+   * Further clamped to whatever is left of the check budget, so this is a
+   * ceiling on a single query rather than a promise about the phase.
+   *
+   * @return int
+   *   The timeout in milliseconds.
+   */
+  public function dnsQueryTimeoutMs(): int {
+    return $this->int('dns_query_timeout_ms', 1500);
   }
 
   /**

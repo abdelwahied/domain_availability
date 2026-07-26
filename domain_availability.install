@@ -205,3 +205,36 @@ function domain_availability_update_10004(): string {
 
   return (string) t('Added pricing configuration, defaulting to a single fixed price.');
 }
+
+/**
+ * Adds the DNS query timeout, and raises the WHOIS address cache lifetime.
+ */
+function domain_availability_update_10005(): string {
+  $config = \Drupal::configFactory()->getEditable(ModuleSettings::CONFIG_NAME);
+  $changed = [];
+
+  // New in this release: a per-query ceiling for the bounded DNS resolver.
+  if ($config->get('dns_query_timeout_ms') === NULL) {
+    $config->set('dns_query_timeout_ms', 1500);
+    $changed[] = 'dns_query_timeout_ms';
+  }
+
+  // 300 seconds guaranteed that most real searches resolved WHOIS hosts from
+  // cold, which is exactly when a stalled resolver was reachable. Registry
+  // WHOIS addresses change on a scale of years, so a day is still cautious.
+  //
+  // Only the old shipped default is raised: a site that chose its own value
+  // chose it, and this update has no business overruling that.
+  if ((int) $config->get('whois_dns_ttl') === 300) {
+    $config->set('whois_dns_ttl', 86400);
+    $changed[] = 'whois_dns_ttl';
+  }
+
+  if ($changed === []) {
+    return (string) t('DNS settings already up to date; nothing was changed.');
+  }
+
+  $config->save();
+
+  return (string) t('Updated DNS settings: @keys.', ['@keys' => implode(', ', $changed)]);
+}

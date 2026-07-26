@@ -62,6 +62,20 @@ final class DomainAvailabilityRequirements {
       ];
     }
 
+    // A resolver that cannot answer is a more common outage than a blocked
+    // WHOIS port, and until now nothing surfaced it: the module simply became
+    // slow and inconclusive with no clue as to why.
+    $report = $this->statusReport->build();
+
+    if (($report['checks']['dns_resolver_configured'] ?? TRUE) === FALSE) {
+      $requirements['domain_availability_dns_resolver'] = [
+        'title' => new TranslatableMarkup('Domain Availability: DNS resolver'),
+        'value' => new TranslatableMarkup('No nameserver could be discovered'),
+        'description' => new TranslatableMarkup('The bounded DNS resolver found no nameserver to ask, so WHOIS hosts cannot be resolved to an address and the DNS delegation fallback is switched off. Lookups still work through RDAP and through WHOIS by hostname. Check that the resolver configuration file is readable by the web server.'),
+        'severity' => REQUIREMENT_WARNING,
+      ];
+    }
+
     $egress = $this->statusReport->whoisEgress();
 
     if ($egress === []) {
