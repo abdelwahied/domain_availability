@@ -3,117 +3,57 @@
 /**
  * @file
  * Domain availability lookups across many TLDs, in parallel.
+ *
+ * Every hook here is a thin delegate to a class in src/Hook/, and every one
+ * carries #[LegacyHook]. That attribute is how Drupal 11.1 and later know to
+ * skip the procedural function because an object-oriented implementation of the
+ * same hook exists, so the work is never done twice.
+ *
+ * The functions cannot simply be deleted, because the module supports Drupal
+ * 10.3, where object-oriented hooks are not dispatched at all — core's own
+ * Hook attribute on that branch documents itself as having no effect before
+ * Drupal 11.1, and HookCollectorPass does not exist there. On 10.3 these
+ * functions are the implementation; on 11.1+ they are dead weight that costs
+ * nothing. Either way the logic lives in the class, once.
  */
 
 declare(strict_types=1);
 
+use Drupal\Core\Hook\Attribute\LegacyHook;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\domain_availability\Hook\DomainAvailabilityHelp;
+use Drupal\domain_availability\Hook\DomainAvailabilityMail;
+use Drupal\domain_availability\Hook\DomainAvailabilityTheme;
 use Drupal\domain_availability\Hook\DomainAvailabilityThemePreprocess;
-use Drupal\domain_availability\Service\RegistrationMailer;
 
 /**
  * Implements hook_help().
  */
+#[LegacyHook]
 function domain_availability_help(string $route_name, RouteMatchInterface $route_match): string {
-  switch ($route_name) {
-    case 'help.page.domain_availability':
-      $output = '<h2>' . t('About') . '</h2>';
-      $output .= '<p>' . t('Checks a domain name across every configured TLD in one parallel sweep, using RDAP where the registry supports it and WHOIS everywhere else.') . '</p>';
-      $output .= '<h3>' . t('Reading the results') . '</h3>';
-      $output .= '<p>' . t('A result is <em>available</em>, <em>registered</em>, or <em>unknown</em>. Unknown means no provider could answer — a throttled registry, an unreachable host, an unparseable reply. It is never a hint that the domain might be free: availability is never guessed, because "available" is the answer a visitor acts on.') . '</p>';
-      $output .= '<h3>' . t('Uses') . '</h3>';
-      $output .= '<dl>';
-      $output .= '<dt>' . t('Search page') . '</dt>';
-      $output .= '<dd>' . t('Visit <code>/domain-search</code>.') . '</dd>';
-      $output .= '<dt>' . t('Block') . '</dt>';
-      $output .= '<dd>' . t('Place "Domain availability search" from Block Layout.') . '</dd>';
-      $output .= '<dt>' . t('Template') . '</dt>';
-      $output .= '<dd>' . t('Call <code>{{ domain_availability_search() }}</code> in any Twig template.') . '</dd>';
-      $output .= '<dt>' . t('API') . '</dt>';
-      $output .= '<dd>' . t('<code>GET /domain-check?domain=neixora</code> returns JSON.') . '</dd>';
-      $output .= '</dl>';
-
-      return $output;
-
-    default:
-      return '';
-  }
+  return \Drupal::classResolver(DomainAvailabilityHelp::class)->help($route_name, $route_match);
 }
 
 /**
  * Implements hook_theme().
  */
+#[LegacyHook]
 function domain_availability_theme(): array {
-  return [
-    'domain_availability_results' => [
-      'variables' => [
-        'report' => NULL,
-        'results' => [],
-        'summary' => [],
-      ],
-    ],
-    'domain_availability_error' => [
-      'variables' => [
-        'message' => '',
-      ],
-    ],
-  ];
+  return \Drupal::classResolver(DomainAvailabilityTheme::class)->theme();
 }
 
 /**
  * Implements hook_preprocess_HOOK() for domain_availability_results.
- *
- * A thin delegate to the preprocess class, which stays the single source of the
- * logic. This procedural hook is the registration mechanism both Drupal 10.3+
- * and Drupal 11 support; the theme registry's "initial preprocess" key exists
- * only on Drupal 11, so relying on it alone left the results unprocessed on
- * Drupal 10.
  */
+#[LegacyHook]
 function domain_availability_preprocess_domain_availability_results(array &$variables): void {
   \Drupal::classResolver(DomainAvailabilityThemePreprocess::class)->preprocessResults($variables);
 }
 
 /**
  * Implements hook_mail().
- *
- * Builds the confirmation and administrator-notification emails for a new
- * registration request. Both share the same facts (reference, domain, company,
- * commercial registration, time); only the framing differs.
  */
+#[LegacyHook]
 function domain_availability_mail(string $key, array &$message, array $params): void {
-  $options = ['langcode' => $message['langcode']];
-  $submitted = \Drupal::service('date.formatter')->format((int) ($params['submitted'] ?? 0), 'long');
-
-  $lines = [
-    t('Reference: @ref', ['@ref' => $params['reference'] ?? ''], $options),
-    t('Domain: @domain', ['@domain' => $params['domain'] ?? ''], $options),
-    \Drupal::translation()->formatPlural((int) ($params['registration_years'] ?? 1), 'Registration period: 1 year', 'Registration period: @count years', [], $options),
-    t('Applicant type: @type', [
-      '@type' => ($params['applicant_type'] ?? 'company') === 'individual'
-        ? t('Individual', [], $options)
-        : t('Company', [], $options),
-    ], $options),
-    t('Company (Arabic): @c', ['@c' => $params['company_ar'] ?? ''], $options),
-    t('Company (English): @c', ['@c' => $params['company_en'] ?? ''], $options),
-    t('Commercial registration: @cr', ['@cr' => $params['commercial_registration'] ?? ''], $options),
-    t('Submitted: @time', ['@time' => $submitted], $options),
-  ];
-
-  switch ($key) {
-    case RegistrationMailer::KEY_CONFIRMATION:
-      $message['subject'] = t('Your domain registration request (@ref)', ['@ref' => $params['reference'] ?? ''], $options);
-      $message['body'][] = t('Thank you. Your domain registration request has been received and is pending review.', [], $options);
-      $message['body'][] = implode("\n", array_map('strval', $lines));
-      $message['body'][] = t('Our team will contact you after reviewing the request.', [], $options);
-      break;
-
-    case RegistrationMailer::KEY_ADMIN_NOTIFICATION:
-      $message['subject'] = t('New domain registration request: @domain (@ref)', [
-        '@domain' => $params['domain'] ?? '',
-        '@ref' => $params['reference'] ?? '',
-      ], $options);
-      $message['body'][] = t('A new domain registration request has been submitted.', [], $options);
-      $message['body'][] = implode("\n", array_map('strval', $lines));
-      break;
-  }
+  \Drupal::classResolver(DomainAvailabilityMail::class)->mail($key, $message, $params);
 }
