@@ -6,6 +6,7 @@ namespace Drupal\domain_availability\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\ConfigFormBase;
+use Drupal\Core\Form\ConfigTarget;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\domain_availability\Cache\DomainCacheInterface;
@@ -89,16 +90,18 @@ final class SettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
-    $config = $this->config(ModuleSettings::CONFIG_NAME);
+    $name = ModuleSettings::CONFIG_NAME;
 
     $form['tlds'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Enabled TLDs'),
       '#description' => $this->t('One per line, with or without the leading dot. Order is preserved in the results. Unlisted TLDs are discovered through IANA automatically.'),
-      '#default_value' => implode("\n", array_map(
-        static fn (string $tld): string => Tld::withDot($tld),
-        $this->settings->tlds(),
-      )),
+      '#config_target' => new ConfigTarget(
+        $name,
+        'tlds',
+        [self::class, 'tldsToLines'],
+        [self::class, 'tldsFromText'],
+      ),
       '#rows' => 8,
       '#required' => TRUE,
     ];
@@ -115,19 +118,19 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Enable RDAP (recommended)'),
       '#description' => $this->t('RDAP answers with machine-readable JSON, so classification is exact. Preferred wherever the registry supports it.'),
-      '#default_value' => $config->get('rdap_enabled'),
+      '#config_target' => $name . ':rdap_enabled',
     ];
     $form['providers']['whois_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable WHOIS (recommended)'),
       '#description' => $this->t('Required for ccTLDs with no RDAP service, such as .sa, .io, .ai, .co and .me. Needs outbound TCP port 43.'),
-      '#default_value' => $config->get('whois_enabled'),
+      '#config_target' => $name . ':whois_enabled',
     ];
     $form['providers']['dns_fallback_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable the DNS delegation fallback'),
       '#description' => $this->t('Last resort. It can only ever prove that a domain is <em>registered</em>: an undelegated domain may still be taken, so absence of DNS proves nothing and stays "unknown".'),
-      '#default_value' => $config->get('dns_fallback_enabled'),
+      '#config_target' => $name . ':dns_fallback_enabled',
     ];
 
     $form['performance'] = [
@@ -139,7 +142,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Cache lookup results'),
       '#description' => $this->t('Strongly recommended. Registries throttle heavy callers, and the cache is what keeps repeat searches instant.'),
-      '#default_value' => $config->get('cache_enabled'),
+      '#config_target' => $name . ':cache_enabled',
     ];
     $form['performance']['cache_ttl'] = [
       '#type' => 'number',
@@ -147,7 +150,7 @@ final class SettingsForm extends ConfigFormBase {
       '#field_suffix' => $this->t('seconds'),
       '#min' => 30,
       '#max' => 86400,
-      '#default_value' => $config->get('cache_ttl'),
+      '#config_target' => $name . ':cache_ttl',
       '#states' => [
         'visible' => [':input[name="cache_enabled"]' => ['checked' => TRUE]],
       ],
@@ -158,7 +161,7 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('How many HTTP lookups may be in flight at once. Lowering this makes a sweep slower but gentler on registries.'),
       '#min' => 1,
       '#max' => 100,
-      '#default_value' => $config->get('parallel_requests'),
+      '#config_target' => $name . ':parallel_requests',
     ];
     $form['performance']['max_lookup_time'] = [
       '#type' => 'number',
@@ -167,7 +170,7 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Total budget for one check across every provider round. Anything unresolved when the budget runs out is reported as "unknown" rather than holding the request open.'),
       '#min' => 1,
       '#max' => 120,
-      '#default_value' => $config->get('max_lookup_time'),
+      '#config_target' => $name . ':max_lookup_time',
     ];
 
     $form['timeouts'] = [
@@ -181,7 +184,7 @@ final class SettingsForm extends ConfigFormBase {
       '#field_suffix' => $this->t('ms'),
       '#min' => 200,
       '#max' => 30000,
-      '#default_value' => $config->get('rdap_timeout_ms'),
+      '#config_target' => $name . ':rdap_timeout_ms',
     ];
     $form['timeouts']['rdap_connect_timeout_ms'] = [
       '#type' => 'number',
@@ -189,7 +192,7 @@ final class SettingsForm extends ConfigFormBase {
       '#field_suffix' => $this->t('ms'),
       '#min' => 200,
       '#max' => 30000,
-      '#default_value' => $config->get('rdap_connect_timeout_ms'),
+      '#config_target' => $name . ':rdap_connect_timeout_ms',
     ];
     $form['timeouts']['whois_timeout_ms'] = [
       '#type' => 'number',
@@ -197,7 +200,7 @@ final class SettingsForm extends ConfigFormBase {
       '#field_suffix' => $this->t('ms'),
       '#min' => 200,
       '#max' => 30000,
-      '#default_value' => $config->get('whois_timeout_ms'),
+      '#config_target' => $name . ':whois_timeout_ms',
     ];
     $form['timeouts']['whois_connect_timeout_ms'] = [
       '#type' => 'number',
@@ -206,7 +209,7 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Applied per address. A host with several addresses gets this budget for each, because a stalled address is retried on the next one.'),
       '#min' => 200,
       '#max' => 30000,
-      '#default_value' => $config->get('whois_connect_timeout_ms'),
+      '#config_target' => $name . ':whois_connect_timeout_ms',
     ];
     $form['timeouts']['whois_address_family'] = [
       '#type' => 'select',
@@ -217,7 +220,12 @@ final class SettingsForm extends ConfigFormBase {
         HostResolver::PREFER_SYSTEM => $this->t('Leave it to the operating system'),
       ],
       '#description' => $this->t('Registry WHOIS is an IPv4-first estate, and several registries publish AAAA records that accept no connections — SaudiNIC among them. "Leave it to the operating system" reproduces that hang.'),
-      '#default_value' => $this->settings->whoisAddressFamily(),
+      '#config_target' => new ConfigTarget(
+        $name,
+        'whois_address_family',
+        [self::class, 'addressFamilyOrDefault'],
+        NULL,
+      ),
     ];
 
     $form['rate_limit'] = [
@@ -229,14 +237,14 @@ final class SettingsForm extends ConfigFormBase {
     $form['rate_limit']['rate_limit_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable per-IP rate limiting'),
-      '#default_value' => $config->get('rate_limit_enabled'),
+      '#config_target' => $name . ':rate_limit_enabled',
     ];
     $form['rate_limit']['rate_limit_max_requests'] = [
       '#type' => 'number',
       '#title' => $this->t('Requests per window'),
       '#min' => 1,
       '#max' => 1000,
-      '#default_value' => $config->get('rate_limit_max_requests'),
+      '#config_target' => $name . ':rate_limit_max_requests',
       '#states' => [
         'visible' => [':input[name="rate_limit_enabled"]' => ['checked' => TRUE]],
       ],
@@ -247,7 +255,7 @@ final class SettingsForm extends ConfigFormBase {
       '#field_suffix' => $this->t('seconds'),
       '#min' => 1,
       '#max' => 3600,
-      '#default_value' => $config->get('rate_limit_window'),
+      '#config_target' => $name . ':rate_limit_window',
       '#states' => [
         'visible' => [':input[name="rate_limit_enabled"]' => ['checked' => TRUE]],
       ],
@@ -259,7 +267,7 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Set to 0 to allow bursts within the window.'),
       '#min' => 0,
       '#max' => 60,
-      '#default_value' => $config->get('rate_limit_min_interval'),
+      '#config_target' => $name . ':rate_limit_min_interval',
       '#states' => [
         'visible' => [':input[name="rate_limit_enabled"]' => ['checked' => TRUE]],
       ],
@@ -273,13 +281,13 @@ final class SettingsForm extends ConfigFormBase {
     $form['authoritative']['saudinic_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable the authoritative provider'),
-      '#default_value' => $config->get('saudinic_enabled'),
+      '#config_target' => $name . ':saudinic_enabled',
     ];
     $form['authoritative']['saudinic_endpoint'] = [
       '#type' => 'url',
       '#title' => $this->t('Endpoint'),
       '#description' => $this->t('Defaults to the WhoisFreaks availability API contract. Any vendor answering with a flat JSON verdict field fits by overriding the response map service parameters.'),
-      '#default_value' => $config->get('saudinic_endpoint'),
+      '#config_target' => new ConfigTarget($name, 'saudinic_endpoint', NULL, [self::class, 'trimValue']),
       '#states' => [
         'visible' => [':input[name="saudinic_enabled"]' => ['checked' => TRUE]],
       ],
@@ -302,10 +310,12 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('TLDs it answers for'),
       '#description' => $this->t('Comma separated. This provider takes priority over RDAP and WHOIS, so list only TLDs the vendor is genuinely authoritative on.'),
-      '#default_value' => implode(', ', array_map(
-        static fn (string $tld): string => Tld::withDot($tld),
-        $this->settings->saudinicTlds(),
-      )),
+      '#config_target' => new ConfigTarget(
+        $name,
+        'saudinic_tlds',
+        [self::class, 'tldsToString'],
+        [self::class, 'tldsFromText'],
+      ),
       '#states' => [
         'visible' => [':input[name="saudinic_enabled"]' => ['checked' => TRUE]],
       ],
@@ -319,7 +329,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Enable logging'),
       '#description' => $this->t('Writes to the <em>domain_availability</em> logger channel.'),
-      '#default_value' => $config->get('logging_enabled'),
+      '#config_target' => $name . ':logging_enabled',
     ];
     $form['diagnostics']['log_level'] = [
       '#type' => 'select',
@@ -330,7 +340,12 @@ final class SettingsForm extends ConfigFormBase {
         'info' => $this->t('Info'),
         'debug' => $this->t('Debug'),
       ],
-      '#default_value' => $this->settings->logLevel(),
+      '#config_target' => new ConfigTarget(
+        $name,
+        'log_level',
+        [self::class, 'logLevelOrDefault'],
+        NULL,
+      ),
       '#states' => [
         'visible' => [':input[name="logging_enabled"]' => ['checked' => TRUE]],
       ],
@@ -339,7 +354,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Debug mode'),
       '#description' => $this->t('Attaches exception details to API 500 responses. <strong>Never enable this on a public site.</strong>'),
-      '#default_value' => $config->get('debug'),
+      '#config_target' => $name . ':debug',
     ];
     $form['diagnostics']['health_probe_tlds'] = [
       '#type' => 'textfield',
@@ -347,16 +362,18 @@ final class SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Comma separated. Their reachability is reported on the <a href=":url">status report</a> and at /domain-check/health. A blocked port 43 is the usual reason a WHOIS-only TLD returns "unknown".', [
         ':url' => '/admin/reports/status',
       ]),
-      '#default_value' => implode(', ', array_map(
-        static fn (string $tld): string => Tld::withDot($tld),
-        $this->settings->healthProbeTlds(),
-      )),
+      '#config_target' => new ConfigTarget(
+        $name,
+        'health_probe_tlds',
+        [self::class, 'tldsToString'],
+        [self::class, 'tldsFromText'],
+      ),
     ];
     $form['diagnostics']['cors_allowed_origins'] = [
       '#type' => 'textfield',
       '#title' => $this->t('CORS allowed origins'),
       '#description' => $this->t('Comma separated exact origins (https://example.com), or * for any. Leave empty to send no CORS headers, which is right when the API is only called from this site.'),
-      '#default_value' => $config->get('cors_allowed_origins'),
+      '#config_target' => new ConfigTarget($name, 'cors_allowed_origins', NULL, [self::class, 'trimValue']),
     ];
 
     return parent::buildForm($form, $form_state);
@@ -535,44 +552,27 @@ final class SettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
+    // Everything with a #config_target is copied across and saved by the
+    // parent. Only the two values that cannot be expressed as one are set
+    // here, on the same editable object the parent will save — the config
+    // factory hands back the same instance for the same name.
     $config = $this->config(ModuleSettings::CONFIG_NAME);
-    $config
-      ->set(PricingSettings::CONFIG_KEY, $this->collectPricing($form_state))
-      ->set('tlds', $this->parseTlds((string) $form_state->getValue('tlds')))
-      ->set('rdap_enabled', (bool) $form_state->getValue('rdap_enabled'))
-      ->set('whois_enabled', (bool) $form_state->getValue('whois_enabled'))
-      ->set('dns_fallback_enabled', (bool) $form_state->getValue('dns_fallback_enabled'))
-      ->set('cache_enabled', (bool) $form_state->getValue('cache_enabled'))
-      ->set('cache_ttl', (int) $form_state->getValue('cache_ttl'))
-      ->set('parallel_requests', (int) $form_state->getValue('parallel_requests'))
-      ->set('max_lookup_time', (int) $form_state->getValue('max_lookup_time'))
-      ->set('rdap_timeout_ms', (int) $form_state->getValue('rdap_timeout_ms'))
-      ->set('rdap_connect_timeout_ms', (int) $form_state->getValue('rdap_connect_timeout_ms'))
-      ->set('whois_timeout_ms', (int) $form_state->getValue('whois_timeout_ms'))
-      ->set('whois_connect_timeout_ms', (int) $form_state->getValue('whois_connect_timeout_ms'))
-      ->set('whois_address_family', (string) $form_state->getValue('whois_address_family'))
-      ->set('rate_limit_enabled', (bool) $form_state->getValue('rate_limit_enabled'))
-      ->set('rate_limit_max_requests', (int) $form_state->getValue('rate_limit_max_requests'))
-      ->set('rate_limit_window', (int) $form_state->getValue('rate_limit_window'))
-      ->set('rate_limit_min_interval', (int) $form_state->getValue('rate_limit_min_interval'))
-      ->set('logging_enabled', (bool) $form_state->getValue('logging_enabled'))
-      ->set('log_level', (string) $form_state->getValue('log_level'))
-      ->set('debug', (bool) $form_state->getValue('debug'))
-      ->set('cors_allowed_origins', trim((string) $form_state->getValue('cors_allowed_origins')))
-      ->set('saudinic_enabled', (bool) $form_state->getValue('saudinic_enabled'))
-      ->set('saudinic_endpoint', trim((string) $form_state->getValue('saudinic_endpoint')))
-      ->set('saudinic_tlds', $this->parseTlds((string) $form_state->getValue('saudinic_tlds')))
-      ->set('health_probe_tlds', $this->parseTlds((string) $form_state->getValue('health_probe_tlds')));
+
+    // Not a single element: the mapping is assembled from every registered
+    // strategy, including the ones that are not currently selected.
+    $config->set(PricingSettings::CONFIG_KEY, $this->collectPricing($form_state));
 
     // Write-only key: only overwrite the stored value when a new key was
     // actually entered. A blank field means "keep the existing key", so saving
-    // the settings can never silently wipe it.
+    // the settings can never silently wipe it — and #config_target would also
+    // have to render the stored key back into the page to load a default,
+    // which is exactly what this field must never do.
     $newKey = trim((string) $form_state->getValue('saudinic_api_key'));
     if ($newKey !== '') {
       $config->set('saudinic_api_key', $newKey);
     }
 
-    $config->save();
+    parent::submitForm($form, $form_state);
 
     // Cached results were produced under the old settings: a changed TLD list,
     // a disabled provider or a tighter timeout would otherwise keep serving
@@ -582,8 +582,113 @@ final class SettingsForm extends ConfigFormBase {
     // Same for the counters: a tightened limit should bite now, not after the
     // old window expires.
     $this->rateLimiter->reset();
+  }
 
-    parent::submitForm($form, $form_state);
+  /**
+   * Renders the stored TLD list as the newline separated textarea value.
+   *
+   * @param mixed $value
+   *   The stored list.
+   *
+   * @return string
+   *   The field value.
+   */
+  public static function tldsToLines(mixed $value): string {
+    return implode("\n", self::withDots($value));
+  }
+
+  /**
+   * Renders the stored TLD list as a comma separated field value.
+   *
+   * @param mixed $value
+   *   The stored list.
+   *
+   * @return string
+   *   The field value.
+   */
+  public static function tldsToString(mixed $value): string {
+    return implode(', ', self::withDots($value));
+  }
+
+  /**
+   * Parses a TLD field back into the stored list.
+   *
+   * @param mixed $value
+   *   The submitted textarea or textfield value.
+   *
+   * @return array<int, string>
+   *   Normalised, dot-less, de-duplicated TLDs.
+   */
+  public static function tldsFromText(mixed $value): array {
+    $parts = preg_split('/[\s,]+/', (string) $value) ?: [];
+
+    return Tld::normaliseList(array_values(array_filter($parts, static fn (string $item): bool => trim($item) !== '')));
+  }
+
+  /**
+   * The stored address family, or the default when it is absent or unknown.
+   *
+   * Mirrors ModuleSettings::whoisAddressFamily() rather than calling it, so the
+   * select cannot show a value the form would refuse to save.
+   *
+   * @param mixed $value
+   *   The stored value.
+   *
+   * @return string
+   *   One of the HostResolver preferences.
+   */
+  public static function addressFamilyOrDefault(mixed $value): string {
+    return in_array($value, [
+      HostResolver::PREFER_IPV4,
+      HostResolver::PREFER_IPV6,
+      HostResolver::PREFER_SYSTEM,
+    ], TRUE) ? (string) $value : HostResolver::PREFER_IPV4;
+  }
+
+  /**
+   * The stored log level, or the default when it is absent.
+   *
+   * @param mixed $value
+   *   The stored value.
+   *
+   * @return string
+   *   The log level.
+   */
+  public static function logLevelOrDefault(mixed $value): string {
+    return ((string) ($value ?? '')) ?: 'warning';
+  }
+
+  /**
+   * Trims a submitted value.
+   *
+   * A method rather than `trim`, because ConfigTarget calls a toConfig callable
+   * as ($value, $form_state) and PHP's internal functions reject the second
+   * argument. A user-defined function simply ignores it.
+   *
+   * @param mixed $value
+   *   The submitted value.
+   *
+   * @return string
+   *   The trimmed value.
+   */
+  public static function trimValue(mixed $value): string {
+    return trim((string) $value);
+  }
+
+  /**
+   * Normalises a stored TLD list and puts the leading dot back on each.
+   *
+   * @param mixed $value
+   *   The stored list.
+   *
+   * @return array<int, string>
+   *   The TLDs, each with a leading dot.
+   */
+  private static function withDots(mixed $value): array {
+    return array_map(
+      static fn (string $tld): string => Tld::withDot($tld),
+      Tld::normaliseList(is_array($value) ? $value : []),
+    );
   }
 
   /**
@@ -634,9 +739,7 @@ final class SettingsForm extends ConfigFormBase {
    *   Normalised, dot-less, de-duplicated TLDs.
    */
   private function parseTlds(string $value): array {
-    $parts = preg_split('/[\s,]+/', $value) ?: [];
-
-    return Tld::normaliseList(array_values(array_filter($parts, static fn (string $item): bool => trim($item) !== '')));
+    return self::tldsFromText($value);
   }
 
 }
