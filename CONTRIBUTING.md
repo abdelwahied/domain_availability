@@ -244,6 +244,131 @@ Two things to know:
 The same recipe covers a registrar API or an alternative WHOIS source — they are
 all just providers.
 
+## How to add a pricing strategy
+
+Same shape as a provider, different tag. Two ship — `fixed` and `extension` —
+and neither is edited to add a third.
+
+A strategy's `id()` **is** its `pricing.mode` value, so registering one adds a
+mode to the configuration and a radio to the settings form. Nothing hardcodes a
+mode name: `SettingsForm` builds the radios from the registry, and
+`PricingManager` looks the active one up by id.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\my_module\Pricing;
+
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\domain_availability\Pricing\PriceValue;
+use Drupal\domain_availability\Pricing\PricingContext;
+use Drupal\domain_availability\Pricing\PricingStrategyBase;
+
+/**
+ * Prices by the provider that answered the lookup.
+ */
+final class ProviderPricingStrategy extends PricingStrategyBase {
+
+  public const ID = 'provider';
+
+  /**
+   * This strategy's own configuration key, under `pricing`.
+   *
+   * Its own, and nobody else's: reading another strategy's key couples two
+   * modes that are supposed to be independently configurable.
+   */
+  public const PRICES_KEY = 'provider_prices';
+
+  public function id(): string {
+    return self::ID;
+  }
+
+  public function label(): TranslatableMarkup {
+    return $this->t('Price by registry');
+  }
+
+  public function description(): TranslatableMarkup {
+    return $this->t('Each registry that answers a lookup carries its own price.');
+  }
+
+  public function weight(): int {
+    return 20;
+  }
+
+  public function priceFor(PricingContext $context): ?PriceValue {
+    // This is what PricingContext carries the result for: the extension alone
+    // cannot say which registry answered.
+    $provider = $context->result?->provider;
+
+    if ($provider === NULL) {
+      return NULL;
+    }
+
+    // fromNumeric(), not a cast: an unset or malformed value has to come back
+    // as "no price", never as 0.0.
+    return PriceValue::fromNumeric($this->settings->getMapping(self::PRICES_KEY)[$provider] ?? NULL);
+  }
+
+}
+```
+
+```yaml
+# my_module.services.yml
+services:
+  my_module.pricing.provider:
+    class: Drupal\my_module\Pricing\ProviderPricingStrategy
+    arguments:
+      - '@domain_availability.pricing_settings'
+      - '@string_translation'
+    tags:
+      - { name: domain_availability_pricing_strategy }
+```
+
+`domain_availability.pricing_settings` is public API — it is how a strategy
+reads its own configuration. Consumers that only want a price call
+`domain_availability.pricing_manager` instead.
+
+Rules worth knowing:
+
+- **`priceFor()` must never throw.** An extension this strategy has no price for
+  is `NULL`, which renders as no price. `PricingManager` catches and logs
+  anything that escapes, but relying on that is a bug.
+- **Read your own configuration keys only.** `PricingSettings` gives you the
+  whole `pricing` mapping; reaching into `fixed_price` or `extension_prices`
+  couples your mode to one you do not own.
+- **Build prices with `PriceValue::fromNumeric()`, never a `(float)` cast.** A
+  cast turns a malformed configuration value into `0.0`; `fromNumeric()`
+  returns `NULL`, which is the honest answer. `PricingManager` also discards a
+  zero price, so a strategy cannot advertise a domain as free by accident.
+- **`id()` is permanent.** It is stored in configuration; renaming one strips
+  pricing from every site that used it.
+- **Ids must be unique.** The registry throws `ConfigurationException` if two
+  strategies report the same `id()`.
+- **Declare what the price depends on.** A strategy is a
+  `CacheableDependencyInterface`. `PricingStrategyBase` declares the module's
+  config tag; add contexts or a max-age if the price varies by user, currency or
+  time.
+- **The tag's `priority` does not decide anything.** Ordering comes from
+  `weight()`, ascending, and the lowest weight is also the default selection.
+
+Add settings of your own by implementing
+`ConfigurablePricingStrategyInterface` as well — `buildConfigurationForm()`,
+`validateConfigurationForm()` and `submitConfigurationForm()`. The settings form
+discovers them, wraps them in a container shown only while your mode is
+selected, validates only the selected mode, and stores whatever
+`submitConfigurationForm()` returns under `pricing`. `SettingsForm` is not
+touched.
+
+Two things the subform must respect:
+
+- **No `#required` and no `#states` of your own.** The wrapper already hides the
+  fields; a hidden required field makes the whole form unsubmittable.
+- **Every input needs its own label.** In a generated table, use
+  `'#title_display' => 'invisible'` with a title that names the row — a column
+  header is not a label for a screen reader.
+
 ## How to add a validation rule
 
 Distinguish the two kinds first.
@@ -271,12 +396,13 @@ Without patching this module:
 | Goal | How |
 | --- | --- |
 | New lookup protocol or registrar | Tag a `DomainProviderInterface` service |
+| New pricing model | Tag a `PricingStrategyInterface` service |
 | Different caching | Bind your own `DomainCacheInterface` to `domain_availability.cache` |
 | Change the results markup | Override `domain-availability-results.html.twig` in your theme |
 | React to a validated ID | Subscribe to `saudi_id_validator`'s events |
 | Extra fields on a request | `hook_entity_base_field_info()` for `domain_registration_request` |
 | Extra validation on a request | `hook_form_alter()` adding a `#validate` handler |
-| Pricing, or a registrar hand-off | A module that reacts to the entity's save hooks |
+| A registrar hand-off | A module that reacts to the entity's save hooks |
 
 The module dispatches **no custom events of its own** in 1.0.0. If your
 integration needs one, propose it in an issue with the use case — an event is a

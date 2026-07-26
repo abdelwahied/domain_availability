@@ -53,6 +53,23 @@ final readonly class CheckReport {
   }
 
   /**
+   * Copies the report with a different set of results.
+   *
+   * For decorating results after the lookup — attaching prices, for one —
+   * without making the report mutable or making the decorator rebuild the
+   * metadata that describes the check itself.
+   *
+   * @param array<int, \Drupal\domain_availability\Dto\DomainResult> $results
+   *   The replacement results, in the same order.
+   *
+   * @return self
+   *   The new report.
+   */
+  public function withResults(array $results): self {
+    return new self($this->query, $results, $this->tookMs, $this->cached);
+  }
+
+  /**
    * Serialises the report to the API contract.
    *
    * This shape is the standalone application's contract, kept byte for byte so

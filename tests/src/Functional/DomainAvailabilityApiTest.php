@@ -79,6 +79,42 @@ final class DomainAvailabilityApiTest extends BrowserTestBase {
     self::assertFalse($payload['cached']);
     self::assertCount(2, $payload['results']);
 
+    // `price` joined the payload in 1.1.0. It is additive — every key a 1.0.0
+    // client read is still here, unchanged and in the same order — and it is
+    // omitted entirely on a site that prices nothing, which the next case
+    // pins down.
+    $result = $payload['results'][0];
+
+    self::assertSame(
+      ['domain', 'extension', 'available', 'status', 'provider', 'price'],
+      array_keys($result),
+    );
+    self::assertSame('taken.com', $result['domain']);
+    self::assertSame('.com', $result['extension']);
+    self::assertFalse($result['available']);
+    self::assertSame('registered', $result['status']);
+    self::assertSame('stub', $result['provider']);
+
+    // `amount` is a JSON number, so a whole price crosses the wire as 35 and
+    // decodes as an int. `formatted` is the string to display; that is what it
+    // is for.
+    self::assertEquals(35, $result['price']['amount']);
+    self::assertSame('SAR', $result['price']['currency']);
+    self::assertSame('35.00', $result['price']['formatted']);
+  }
+
+  /**
+   * A site that prices nothing gets the 1.0.0 payload, key for key.
+   */
+  public function testApiContractWithoutPricing(): void {
+    $this->config('domain_availability.settings')->clear('pricing')->save();
+    $this->drupalLogin($this->drupalCreateUser(['use domain availability api']));
+
+    $this->drupalGet('/domain-check', ['query' => ['domain' => 'taken']]);
+    $this->assertSession()->statusCodeEquals(200);
+
+    $payload = json_decode($this->getSession()->getPage()->getContent(), TRUE);
+
     self::assertSame([
       'domain' => 'taken.com',
       'extension' => '.com',

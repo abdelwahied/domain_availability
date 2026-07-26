@@ -20,8 +20,10 @@ use Psr\Log\LoggerInterface;
  *
  * Registry WHOIS hosts are a legacy, IPv4-first estate, and this failure mode
  * is not unique to .sa: whois.verisign-grs.com, whois.nic.io and whois.nic.me
- * all publish AAAA records too. Handing the caller every address, best family
- * first, lets it fall back instead of hanging on the first dead one.
+ * all publish AAAA records too. Handing the caller every address of the
+ * preferred family lets it fall back instead of hanging on the first dead one;
+ * the other family is queried only when the preferred one answers nothing,
+ * because each DNS query is serial and cannot be given a timeout.
  *
  * @internal
  *   Implementation detail of the WHOIS path.
@@ -44,6 +46,7 @@ final class HostResolver {
     private readonly DomainCacheInterface $cache,
     private readonly LoggerInterface $logger,
     private readonly ModuleSettings $settings,
+    private readonly LookupBudget $budget,
   ) {
   }
 
@@ -84,6 +87,14 @@ final class HostResolver {
       return $this->memo[$host] = $cached;
     }
 
+    // dns_get_record() takes no timeout, so the only way to keep it inside the
+    // check budget is not to call it once the budget is gone. System
+    // resolution is the class's own degraded answer; taking it here costs a
+    // possibly-dead first address, not the whole request.
+    if ($this->budget->exhausted()) {
+      return $this->memo[$host] = [$host];
+    }
+
     $candidates = $this->lookup($host);
 
     if ($candidates === []) {
@@ -120,7 +131,13 @@ final class HostResolver {
   }
 
   /**
-   * Looks up all addresses for a host, ordered by the configured family.
+   * Looks up the addresses for a host, preferred family first.
+   *
+   * The other family is only queried when the preferred one answers nothing:
+   * collecting both is a fallback for a host with no usable address in the
+   * preferred family, and a fallback should not be paid for up front. Every
+   * query here is serial and untimeoutable, so halving them halves the worst
+   * case of a cold sweep.
    *
    * @param string $host
    *   The hostname to resolve.
@@ -129,12 +146,19 @@ final class HostResolver {
    *   The resolved addresses.
    */
   private function lookup(string $host): array {
-    $ipv4 = $this->records($host, DNS_A, 'ip');
-    $ipv6 = $this->records($host, DNS_AAAA, 'ipv6');
+    $preferIpv6 = $this->settings->whoisAddressFamily() === self::PREFER_IPV6;
 
-    return $this->settings->whoisAddressFamily() === self::PREFER_IPV6
-            ? [...$ipv6, ...$ipv4]
-            : [...$ipv4, ...$ipv6];
+    $preferred = $preferIpv6
+            ? $this->records($host, DNS_AAAA, 'ipv6')
+            : $this->records($host, DNS_A, 'ip');
+
+    if ($preferred !== [] || $this->budget->exhausted()) {
+      return $preferred;
+    }
+
+    return $preferIpv6
+            ? $this->records($host, DNS_A, 'ip')
+            : $this->records($host, DNS_AAAA, 'ipv6');
   }
 
   /**

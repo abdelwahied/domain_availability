@@ -49,12 +49,15 @@ final class WhoisClient {
    *   The host resolver.
    * @param \Drupal\domain_availability\Service\ModuleSettings $settings
    *   The module settings.
+   * @param \Drupal\domain_availability\Service\LookupBudget $budget
+   *   The shared lookup budget.
    * @param int $port
    *   The WHOIS port; 43 per RFC 3912.
    */
   public function __construct(
     private readonly HostResolver $resolver,
     private readonly ModuleSettings $settings,
+    private readonly LookupBudget $budget,
     private readonly int $port = 43,
   ) {
   }
@@ -75,9 +78,19 @@ final class WhoisClient {
 
     $sessions = [];
     $responses = [];
-    $now = microtime(TRUE);
 
     foreach ($queries as $key => $query) {
+      // whois_timeout_ms bounds the socket phase below, and it starts after
+      // this loop — but resolution is serial and dns_get_record() takes no
+      // timeout, so the loop itself has to answer to the check budget or
+      // nothing bounds it at all. openSocket() would resolve the hostname
+      // through the OS just as blockingly, so the whole query is dropped.
+      if ($this->budget->exhausted()) {
+        $responses[$key] = WhoisResponse::transportError($query['server'], 'lookup_budget_exhausted');
+
+        continue;
+      }
+
       $candidates = $this->resolver->resolve($query['server']);
 
       if ($candidates === []) {
@@ -105,12 +118,23 @@ final class WhoisClient {
         'body' => '',
         'done' => FALSE,
         'connected' => FALSE,
-        'started_at' => $now,
+        'started_at' => 0.0,
         'error' => NULL,
       ];
     }
 
-    $deadline = microtime(TRUE) + ($this->settings->whoisTimeoutMs() / 1000);
+    // Every session's connect clock starts here, not when its socket was
+    // opened: DNS for a later host can take seconds, and an earlier session
+    // must not be declared stalled for time it spent waiting on that.
+    $startedAt = microtime(TRUE);
+
+    foreach (array_keys($sessions) as $key) {
+      $sessions[$key]['started_at'] = $startedAt;
+    }
+
+    // Clamped to the check budget, so a batch cannot spend a full WHOIS
+    // window that the check as a whole no longer has.
+    $deadline = $startedAt + ($this->budget->clampMs($this->settings->whoisTimeoutMs()) / 1000);
 
     while ($this->pending($sessions) !== [] && microtime(TRUE) < $deadline) {
       $this->tick($sessions, $deadline);

@@ -8,6 +8,7 @@ use Drupal\domain_availability\Cache\DomainCacheInterface;
 use Drupal\domain_availability\Dto\CheckReport;
 use Drupal\domain_availability\Dto\DomainResult;
 use Drupal\domain_availability\Dto\DomainStatus;
+use Drupal\domain_availability\Pricing\PricingManager;
 use Drupal\domain_availability\Provider\DomainProviderInterface;
 use Drupal\domain_availability\Provider\ProviderRegistry;
 use Drupal\domain_availability\Utility\Timer;
@@ -57,12 +58,18 @@ final class DomainCheckService {
    *   The module's logger channel.
    * @param \Drupal\domain_availability\Service\ModuleSettings $settings
    *   The module settings.
+   * @param \Drupal\domain_availability\Service\LookupBudget $budget
+   *   The shared lookup budget.
+   * @param \Drupal\domain_availability\Pricing\PricingManager $pricing
+   *   The pricing manager.
    */
   public function __construct(
     private readonly ProviderRegistry $registry,
     private readonly DomainCacheInterface $cache,
     private readonly LoggerInterface $logger,
     private readonly ModuleSettings $settings,
+    private readonly LookupBudget $budget,
+    private readonly PricingManager $pricing,
   ) {}
 
   /**
@@ -82,15 +89,19 @@ final class DomainCheckService {
     $cached = $this->readCache($cacheKey, $label);
 
     if ($cached !== NULL) {
-      return $cached->asCached($timer->elapsedMs());
+      return $this->pricing->applyTo($cached->asCached($timer->elapsedMs()));
     }
 
     $results = $this->resolve($label, $tlds);
     $report = new CheckReport($label, $results, $timer->elapsedMs(), FALSE);
 
+    // Cached before pricing, priced after: the cache holds what the registries
+    // answered, which is what stays true for its whole TTL. A price is
+    // configuration, and an administrator who changes one expects the next
+    // search to show it — not the one after the cache expires.
     $this->writeCache($cacheKey, $report);
 
-    return $report;
+    return $this->pricing->applyTo($report);
   }
 
   /**
@@ -113,48 +124,56 @@ final class DomainCheckService {
       $outstanding[$label . '.' . $tld] = TRUE;
     }
 
-    $deadline = microtime(TRUE) + $this->settings->maxLookupTime();
+    // The budget is a service, not a local: the clients that actually spend
+    // the time read it too, so a single slow group cannot overrun the ceiling
+    // the setting advertises.
+    $this->budget->start((float) $this->settings->maxLookupTime());
 
-    for ($round = 0; $round < self::MAX_ROUNDS && $outstanding !== []; $round++) {
-      // The whole check is bounded, not just each provider: a chain of slow
-      // rounds must never outlive the request the user is waiting on.
-      if (microtime(TRUE) >= $deadline) {
-        $this->logger->warning('Lookup budget exhausted; @count domains left unresolved.', [
-          '@count' => count($outstanding),
-          'label' => $label,
-        ]);
+    try {
+      for ($round = 0; $round < self::MAX_ROUNDS && $outstanding !== []; $round++) {
+        $groups = $this->group(array_keys($outstanding), $attempted);
 
-        break;
-      }
-
-      $groups = $this->group(array_keys($outstanding), $attempted);
-
-      if ($groups === []) {
-        break;
-      }
-
-      foreach ($groups as $providerName => $domains) {
-        $provider = $this->providerByName($providerName);
-
-        if ($provider === NULL) {
-          continue;
+        if ($groups === []) {
+          break;
         }
 
-        foreach ($this->runProvider($provider, $domains) as $domain => $result) {
-          $attempted[$domain][] = $providerName;
+        foreach ($groups as $providerName => $domains) {
+          // Checked per group, not per round: a round runs every group
+          // serially, so between-round checks alone cannot bound one.
+          if ($this->budget->exhausted()) {
+            $this->logger->warning('Lookup budget exhausted; @count domains left unresolved.', [
+              '@count' => count($outstanding),
+              'label' => $label,
+            ]);
 
-          if ($result->isConclusive()) {
-            $resolved[$domain] = $result;
-            unset($outstanding[$domain]);
+            break 2;
+          }
 
+          $provider = $this->providerByName($providerName);
+
+          if ($provider === NULL) {
             continue;
           }
 
-          // Keep the best explanation seen so far, in case every provider in
-          // the chain ends up failing.
-          $resolved[$domain] = $result;
+          foreach ($this->runProvider($provider, $domains) as $domain => $result) {
+            $attempted[$domain][] = $providerName;
+
+            if ($result->isConclusive()) {
+              $resolved[$domain] = $result;
+              unset($outstanding[$domain]);
+
+              continue;
+            }
+
+            // Keep the best explanation seen so far, in case every provider in
+            // the chain ends up failing.
+            $resolved[$domain] = $result;
+          }
         }
       }
+    }
+    finally {
+      $this->budget->stop();
     }
 
     foreach (array_keys($outstanding) as $domain) {

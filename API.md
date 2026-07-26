@@ -36,6 +36,10 @@ Every example here was run against the implementation before it was written.
 | Lookup service | `domain_availability.checker` |
 | Provider tag | `domain_availability_provider` |
 | Provider contract | `Drupal\domain_availability\Provider\DomainProviderInterface` |
+| Pricing service | `domain_availability.pricing_manager` |
+| Pricing settings | `domain_availability.pricing_settings` |
+| Pricing tag | `domain_availability_pricing_strategy` |
+| Pricing contract | `Drupal\domain_availability\Pricing\PricingStrategyInterface` |
 | Cache contract | `Drupal\domain_availability\Cache\DomainCacheInterface` |
 | Settings services | `domain_availability.settings`, `domain_availability.registration_settings` |
 | Entity type | `domain_registration_request` |
@@ -134,6 +138,101 @@ A full worked example is in [CONTRIBUTING.md](CONTRIBUTING.md#how-to-add-a-tld-p
 Two providers reporting the same `name()` raise `ConfigurationException` at
 container build time.
 
+## Extension point: PricingStrategyInterface
+
+*Since 1.1.0.* A pricing model is one class plus one tagged service. A
+strategy's `id()` **is** its `pricing.mode` value, so registering one adds a
+mode to the configuration and a radio to the settings form without editing
+either.
+
+```php
+interface PricingStrategyInterface extends CacheableDependencyInterface {
+  public function id(): string;
+  public function label(): TranslatableMarkup;
+  public function description(): TranslatableMarkup;
+  public function weight(): int;
+  public function priceFor(PricingContext $context): ?PriceValue;
+}
+```
+
+| Method | Contract |
+| --- | --- |
+| `id()` | Stable machine name, stored in configuration. Renaming one strips pricing from every site that used it. Must be unique. |
+| `label()` / `description()` | The radio and its help text on the settings form. |
+| `weight()` | Ordering, **lowest first**. The lowest is also the default selection. |
+| `priceFor($context)` | The price, or `NULL` when this strategy has none for it. **Must never throw.** |
+| `getCacheTags()` etc. | Whatever the prices depend on. A page rendering them merges this in. |
+
+Implement `ConfigurablePricingStrategyInterface` as well when the strategy has
+settings of its own:
+
+```php
+public function buildConfigurationForm(): array;
+public function validateConfigurationForm(array $values, array $parents, FormStateInterface $formState): void;
+public function submitConfigurationForm(array $values): array;   // keys to store under `pricing`
+```
+
+Split from the base interface on purpose: a strategy that reads its prices from
+a registrar API or a promotion entity has nothing to put on a form, and should
+not implement three empty methods to say so.
+
+Register it:
+
+```yaml
+services:
+  my_module.pricing.promotional:
+    class: Drupal\my_module\Pricing\PromotionPricingStrategy
+    arguments: ['@domain_availability.pricing_settings', '@string_translation']
+    tags:
+      - { name: domain_availability_pricing_strategy }
+```
+
+The shipped strategies:
+
+| Strategy | `id()` | `weight()` | Reads |
+| --- | --- | --- | --- |
+| `FixedPriceStrategy` | `fixed` | 0 | `pricing.fixed_price` |
+| `ExtensionPriceStrategy` | `extension` | 10 | `pricing.extension_prices` |
+
+Two strategies reporting the same `id()` raise `ConfigurationException` at
+container build time.
+
+### `PricingContext`
+
+What a strategy is allowed to price on. Widened additively, so a future
+strategy that needs more never changes the interface method:
+
+```php
+$context->extension;          // 'com' — normalised, dot-less
+$context->domain;             // 'neixora.com' | NULL
+$context->result;             // DomainResult | NULL
+$context->dottedExtension();  // '.com'
+
+PricingContext::forExtension('.com');
+PricingContext::forResult($result);
+```
+
+### Service: `domain_availability.pricing_manager`
+
+The only supported way to ask what something costs. Nothing outside the pricing
+subsystem knows which strategy is active, what the modes are called, or where
+the numbers are stored.
+
+```php
+$price = $pricingManager->getPrice('.com');            // ?PriceValue
+$price = $pricingManager->price($context);             // ?PriceValue
+$report = $pricingManager->applyTo($report);           // CheckReport, every result priced
+$pricingManager->activeStrategy();                     // ?PricingStrategyInterface
+$pricingManager->strategies();                         // id => strategy, by weight
+$pricingManager->defaultMode();                        // lowest-weight id
+$pricingManager->getCacheableMetadata();               // CacheableMetadata
+```
+
+Failure is always `NULL`, never an exception: an unset mode, a mode left behind
+by an uninstalled module, an unpriced extension, or a third-party strategy that
+throws. A domain search that returns no price is degraded; one that returns
+HTTP 500 is broken.
+
 ## Result objects
 
 ### `CheckReport`
@@ -166,7 +265,9 @@ $result->extension;  // '.sa'
 $result->status;     // DomainStatus
 $result->provider;   // 'whois' | NULL
 $result->reason;     // string | NULL — why it is unknown
+$result->price;      // PriceValue | NULL — since 1.1.0
 $result->isConclusive();
+$result->withPrice($price);   // non-destructive copy; since 1.1.0
 ```
 
 Built through named constructors, never `new`:
@@ -177,11 +278,37 @@ DomainResult::registered($domain, $extension, $providerName);
 DomainResult::unknown($domain, $extension, $providerName, $reason);
 ```
 
-`toArray()` omits `reason` when there is none:
+Providers never set a price. `PricingManager` attaches one on the way out of
+`DomainCheckService`, after the result cache — see
+[Extension point: PricingStrategyInterface](#extension-point-pricingstrategyinterface).
+
+`toArray()` omits `reason` when there is none, and `price` when the site does
+not price the extension:
 
 ```php
 ['domain' => 'neixora.sa', 'extension' => '.sa', 'available' => TRUE, 'status' => 'available', 'provider' => 'whois']
 ```
+
+### `PriceValue`
+
+```php
+$price->amount;      // 45.5
+$price->currency;    // 'SAR'
+$price->formatted(); // '45.50'
+$price->isFree();    // amount === 0.0
+$price->toArray();   // ['amount' => 45.5, 'currency' => 'SAR', 'formatted' => '45.50']
+
+PriceValue::fromNumeric($raw);            // NULL for blank, non-numeric or negative
+PriceValue::fromNumeric($raw, 'USD');
+PriceValue::DEFAULT_CURRENCY;             // 'SAR'
+PriceValue::SCALE;                        // 2
+```
+
+Immutable, and never negative: the constructor throws
+`\InvalidArgumentException` for a negative amount or a currency code that is not
+three upper-case letters. `fromNumeric()` is the tolerant door for configured
+and submitted values — it returns `NULL` instead of throwing, because "this
+extension has no price" is an ordinary outcome, not a failure.
 
 ### `DomainStatus`
 
@@ -280,6 +407,51 @@ $settings->healthProbeTlds();
 
 The configuration object is `domain_availability.settings`, edited at
 `/admin/config/system/domain-availability`.
+
+### Pricing configuration
+
+Pricing lives in a single `pricing` mapping inside the same configuration
+object:
+
+```yaml
+pricing:
+  mode: fixed             # a pricing strategy id
+  fixed_price: 35.00      # read by FixedPriceStrategy
+  extension_prices:       # read by ExtensionPriceStrategy
+    com: 45.00
+    sa: 120.50
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `mode` | string | The `id()` of the active strategy. Deliberately an open string, not an enumeration: a strategy may come from another module, and closing the set would make every new one a schema patch. |
+| `fixed_price` | float | The single price, in fixed mode. |
+| `extension_prices` | mapping | Price per **dot-less, lower-case** TLD. An absent or blank key means the extension is shown without a price. |
+
+**Do not read these keys directly.** They are the storage shape, not the
+contract — call `domain_availability.pricing_manager` for a price, or
+`domain_availability.pricing_settings` (public API since 1.1.0) if you are
+writing a strategy and need to read **your own** keys.
+
+A strategy contributed by another module stores its own keys in the same
+mapping, returned from `submitConfigurationForm()`.
+
+### Zero is not a price
+
+`PricingManager` discards a zero price and returns `NULL` for it, whatever
+strategy produced it. Two reasons, and the second is the load-bearing one:
+
+1. An extension a site does not sell is left blank, which already means "no
+   price". A second way to say the same thing is a second thing to explain.
+2. Drupal's typed configuration **casts on save**. Because the schema declares
+   these keys as `float`, a stray string imported into `extension_prices` is
+   stored as `0.0`, and `TRUE` is stored as `1.0`. The cast happens inside
+   `Config::save()`, so nothing downstream can tell a malformed import from a
+   deliberate zero. Discarding zero is what stops one bad config import from
+   advertising every domain on the site as free.
+
+Selling at zero is therefore not a supported configuration. The settings form
+rejects it with a message pointing at the blank field instead.
 
 ### `domain_availability.registration_settings` → `RegistrationSettings`
 
@@ -413,7 +585,12 @@ Permissions: `access domain availability search`,
       "extension": ".sa",
       "available": true,
       "status": "available",
-      "provider": "whois"
+      "provider": "whois",
+      "price": {
+        "amount": 120.5,
+        "currency": "SAR",
+        "formatted": "120.50"
+      }
     }
   ]
 }
@@ -421,6 +598,15 @@ Permissions: `access domain availability search`,
 
 `available` is `null` when `status` is `unknown`. A `reason` key appears only on
 an unknown result.
+
+`price` was added in 1.1.0 and appears only when the site prices that
+extension — a site with no pricing configured returns exactly the 1.0.0 keys.
+It is an additive key under
+[the compatibility policy](#may-change-in-a-minor-release); parse defensively.
+
+`amount` is a JSON number, so a whole price is emitted as `35`, not `35.0`, and
+decodes as an integer in PHP. Display `formatted`, which is always a
+fixed-scale string.
 
 Errors carry `success: false` and a machine-readable `error`:
 
@@ -564,7 +750,50 @@ ProviderRegistry                            (@internal)
                 │
                 ▼
         DomainResult · CheckReport          (@api)
+                │
+                ▼
+domain_availability.pricing_manager         (@api)
+  PricingManager
+        │
+        ▼
+PricingStrategyRegistry                     (@internal)
+  collects services tagged
+  domain_availability_pricing_strategy      (@api extension point)
+        │
+        ├── fixed      (0)   one price for every extension
+        └── extension (10)   a price per extension
+                │
+                ▼
+        PriceValue on each DomainResult     (@api)
 ```
+
+Pricing hangs off the end of the lookup, not inside it. Providers answer *is
+this domain free*; pricing answers *what would it cost*, from configuration,
+and the two never meet: a provider cannot set a price and a strategy cannot
+change a status.
+
+### Pricing flow
+
+```
+DomainCheckService::check()
+        │
+        ├─ cache hit ──────────────► CheckReport (unpriced)
+        │                                   │
+        └─ provider rounds ─► writeCache ───┤   cache stores what registries said
+                                            ▼
+                            PricingManager::applyTo()
+                                            │
+                              pricing.mode ─┴─► the strategy carrying that id
+                                            │      NULL mode, unknown mode, or a
+                                            │      strategy that throws → no price
+                                            ▼
+                            CheckReport with prices, per request
+```
+
+Prices are attached **after** the cache, on every request. A price is
+configuration, so an administrator who changes one sees it on the next search
+rather than when the lookup cache expires — and a cached registry answer is
+never invalidated just because a number changed.
 
 ### Lookup flow
 

@@ -8,6 +8,26 @@ domain_availability.settings:
       sequence:
         type: string
         label: 'TLD'
+    pricing:
+      type: mapping
+      label: 'Pricing'
+      mapping:
+        mode:
+          # Deliberately an open string, not an enumeration: the mode is a
+          # pricing strategy id, and a strategy may be supplied by another
+          # module. Constraining this here would make every new strategy a
+          # schema patch.
+          type: string
+          label: 'Active pricing strategy'
+        fixed_price:
+          type: float
+          label: 'Price charged for every extension'
+        extension_prices:
+          type: sequence
+          label: 'Price per extension, keyed by dot-less TLD'
+          sequence:
+            type: float
+            label: 'Price'
     cache_enabled:
       type: boolean
       label: 'Enable result caching'

@@ -9,6 +9,9 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\domain_availability\Cache\DomainCacheInterface;
+use Drupal\domain_availability\Pricing\ConfigurablePricingStrategyInterface;
+use Drupal\domain_availability\Pricing\PricingManager;
+use Drupal\domain_availability\Pricing\PricingSettings;
 use Drupal\domain_availability\Service\HostResolver;
 use Drupal\domain_availability\Service\ModuleSettings;
 use Drupal\domain_availability\Service\RateLimiter;
@@ -40,6 +43,8 @@ final class SettingsForm extends ConfigFormBase {
    *   The rate limiter.
    * @param \Drupal\domain_availability\Service\ModuleSettings $settings
    *   The module settings.
+   * @param \Drupal\domain_availability\Pricing\PricingManager $pricing
+   *   The pricing manager, which supplies the registered strategies.
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
@@ -47,6 +52,7 @@ final class SettingsForm extends ConfigFormBase {
     protected DomainCacheInterface $cache,
     protected RateLimiter $rateLimiter,
     protected ModuleSettings $settings,
+    protected PricingManager $pricing,
   ) {
     parent::__construct($config_factory, $typedConfigManager);
   }
@@ -61,6 +67,7 @@ final class SettingsForm extends ConfigFormBase {
       $container->get('domain_availability.cache'),
       $container->get('domain_availability.rate_limiter'),
       $container->get('domain_availability.settings'),
+      $container->get('domain_availability.pricing_manager'),
     );
   }
 
@@ -95,6 +102,8 @@ final class SettingsForm extends ConfigFormBase {
       '#rows' => 8,
       '#required' => TRUE,
     ];
+
+    $form['pricing'] = $this->buildPricingSection();
 
     $form['providers'] = [
       '#type' => 'details',
@@ -354,10 +363,93 @@ final class SettingsForm extends ConfigFormBase {
   }
 
   /**
+   * Builds the pricing section entirely from the registered strategies.
+   *
+   * Nothing here names a mode. The radios, their descriptions and their
+   * settings all come from the strategies the container collected, so a new
+   * pricing model appears on this form by being tagged — this method is not
+   * one of the places a contributor has to remember to edit.
+   *
+   * @return array<string, mixed>
+   *   The pricing form section.
+   */
+  private function buildPricingSection(): array {
+    $strategies = $this->pricing->strategies();
+    $mode = $this->pricing->activeStrategy()?->id() ?? $this->pricing->defaultMode();
+
+    $section = [
+      '#type' => 'details',
+      '#title' => $this->t('Pricing'),
+      '#open' => TRUE,
+      '#description' => $this->t('What each available domain is shown as costing. Prices are attached to results after the lookup, so changing one takes effect on the next search rather than when the result cache expires.'),
+      // Namespaced, so a strategy's field name can never collide with a
+      // module setting or with another strategy's.
+      '#tree' => TRUE,
+    ];
+
+    if ($strategies === []) {
+      $section['empty'] = [
+        '#type' => 'item',
+        '#markup' => $this->t('No pricing strategies are registered, so results are shown without prices.'),
+      ];
+
+      return $section;
+    }
+
+    $section[PricingSettings::MODE_KEY] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Pricing mode'),
+      '#options' => array_map(
+        static fn ($strategy) => $strategy->label(),
+        $strategies,
+      ),
+      '#default_value' => $mode,
+      '#required' => TRUE,
+    ];
+
+    foreach ($strategies as $id => $strategy) {
+      $section[PricingSettings::MODE_KEY][$id]['#description'] = $strategy->description();
+
+      if (!$strategy instanceof ConfigurablePricingStrategyInterface) {
+        continue;
+      }
+
+      $section['settings'][$id] = [
+        '#type' => 'container',
+        // Only the selected mode's settings are shown. #states hides them in
+        // the browser but still submits them, which is what lets an
+        // administrator switch modes and back without losing what they typed.
+        '#states' => [
+          'visible' => [
+            ':input[name="pricing[' . PricingSettings::MODE_KEY . ']"]' => ['value' => $id],
+          ],
+        ],
+      ] + $strategy->buildConfigurationForm();
+    }
+
+    return $section;
+  }
+
+  /**
+   * The strategy an administrator has selected on this form.
+   *
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   *
+   * @return string
+   *   The submitted mode.
+   */
+  private function submittedMode(FormStateInterface $form_state): string {
+    return trim((string) $form_state->getValue([PricingSettings::CONFIG_KEY, PricingSettings::MODE_KEY], ''));
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     parent::validateForm($form, $form_state);
+
+    $this->validatePricing($form_state);
 
     $tlds = $this->parseTlds((string) $form_state->getValue('tlds'));
 
@@ -396,11 +488,56 @@ final class SettingsForm extends ConfigFormBase {
   }
 
   /**
+   * Validates the selected pricing mode and its own settings.
+   *
+   * Only the selected strategy is validated. The others are on the page but
+   * hidden, and a hidden field that refuses to save is a form nobody can
+   * submit.
+   *
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   */
+  private function validatePricing(FormStateInterface $form_state): void {
+    $strategies = $this->pricing->strategies();
+
+    if ($strategies === []) {
+      return;
+    }
+
+    $mode = $this->submittedMode($form_state);
+    $name = PricingSettings::CONFIG_KEY . '][' . PricingSettings::MODE_KEY;
+
+    if ($mode === '') {
+      $form_state->setErrorByName($name, $this->t('Choose a pricing mode.'));
+
+      return;
+    }
+
+    if (!isset($strategies[$mode])) {
+      $form_state->setErrorByName($name, $this->t('"@mode" is not a known pricing mode.', ['@mode' => $mode]));
+
+      return;
+    }
+
+    $strategy = $strategies[$mode];
+
+    if (!$strategy instanceof ConfigurablePricingStrategyInterface) {
+      return;
+    }
+
+    $parents = [PricingSettings::CONFIG_KEY, 'settings', $mode];
+    $values = $form_state->getValue($parents, []);
+
+    $strategy->validateConfigurationForm(is_array($values) ? $values : [], $parents, $form_state);
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $config = $this->config(ModuleSettings::CONFIG_NAME);
     $config
+      ->set(PricingSettings::CONFIG_KEY, $this->collectPricing($form_state))
       ->set('tlds', $this->parseTlds((string) $form_state->getValue('tlds')))
       ->set('rdap_enabled', (bool) $form_state->getValue('rdap_enabled'))
       ->set('whois_enabled', (bool) $form_state->getValue('whois_enabled'))
@@ -447,6 +584,44 @@ final class SettingsForm extends ConfigFormBase {
     $this->rateLimiter->reset();
 
     parent::submitForm($form, $form_state);
+  }
+
+  /**
+   * Collects the pricing mapping every strategy wants stored.
+   *
+   * Every strategy contributes, not only the selected one: an administrator who
+   * switches from per-extension to fixed pricing and back should find the table
+   * exactly as they left it.
+   *
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   The form state.
+   *
+   * @return array<string, mixed>
+   *   The value to store under `pricing`.
+   */
+  private function collectPricing(FormStateInterface $form_state): array {
+    $strategies = $this->pricing->strategies();
+
+    if ($strategies === []) {
+      return $this->config(ModuleSettings::CONFIG_NAME)->get(PricingSettings::CONFIG_KEY) ?? [];
+    }
+
+    $pricing = [];
+
+    foreach ($strategies as $id => $strategy) {
+      if (!$strategy instanceof ConfigurablePricingStrategyInterface) {
+        continue;
+      }
+
+      $values = $form_state->getValue([PricingSettings::CONFIG_KEY, 'settings', $id], []);
+      $pricing = array_merge($pricing, $strategy->submitConfigurationForm(is_array($values) ? $values : []));
+    }
+
+    // Set last, so a strategy can never claim the key that decides which
+    // strategy runs.
+    $pricing[PricingSettings::MODE_KEY] = $this->submittedMode($form_state);
+
+    return $pricing;
   }
 
   /**

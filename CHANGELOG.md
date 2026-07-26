@@ -15,21 +15,60 @@ type id. Classes marked `@internal` may change in any release.
 
 Nothing yet.
 
-## [1.0.1] — 2026-07-23
+## [1.1.0] — 2026-07-26
 
-### Fixed
+### Added — pricing
 
-- Serialization safety: injected services on the search form, settings form and
-  registration list builder are now `protected` and no longer `readonly`,
-  matching the `DependencySerializationTrait` contract on PHP 8.3.
-- Replaced the deprecated `RendererInterface::renderPlain()` with
-  `renderInIsolation()`.
-- Added the Drupal 11.3 cacheability parameter to the registration list
-  builder's `getDefaultOperations()` override; still compatible with Drupal 10.3.
-- Removed provably-redundant assertions and null-coalesces flagged at PHPStan
-  level 4.
+- A pricing subsystem under `src/Pricing/`. Two modes ship: **Same price for all
+  domains** (`pricing.mode: fixed`) and **Different price per extension**
+  (`pricing.mode: extension`).
+- `PricingStrategyInterface` and the `domain_availability_pricing_strategy`
+  service tag, so a new pricing model — provider, premium, promotional,
+  currency-aware — is one class plus one tagged service and no existing class
+  changes. A strategy's `id()` is its `pricing.mode` value.
+- `ConfigurablePricingStrategyInterface` for strategies that bring their own
+  settings fields, validation and stored shape. `SettingsForm` builds its
+  pricing section entirely from the registered strategies, so it is not edited
+  to add a mode.
+- `domain_availability.pricing_manager`, the only supported way to ask for a
+  price: `getPrice('.com')`. Failure is always `NULL` — an unset mode, a mode
+  left behind by an uninstalled module, an unpriced extension, or a third-party
+  strategy that throws.
+- `domain_availability.pricing_settings`, typed read-only access to the
+  `pricing` mapping. Part of the extension contract: it is how a strategy reads
+  its own configuration keys, and `PricingStrategyBase` takes it as its first
+  constructor argument.
+- `PriceValue`, an immutable amount with a currency, and `PricingContext`, the
+  parameter object a strategy prices on.
+- A per-extension price table on the settings form, generated from the enabled
+  TLD list. Enable a TLD and its row appears; nothing is hardcoded.
+- `DomainResult::$price` and `DomainResult::withPrice()`. Providers never set a
+  price: `PricingManager` attaches one after the lookup cache, so changing a
+  price takes effect on the next search rather than when the cache expires.
+- `CheckReport::withResults()`, for decorating results without making the
+  report mutable.
+- A `price` object on each JSON result, present only when the site prices that
+  extension. Additive: every key a 1.0.0 client read is unchanged, and a site
+  with no pricing configured returns exactly the 1.0.0 keys.
+- The results template renders `result.price.formatted` on available results,
+  behind a visually hidden "Price" label.
+- `domain_availability_update_10004()` adds the `pricing` configuration to
+  existing sites, defaulting to a single fixed price of 35.00. Anything already
+  stored under `pricing` is left untouched.
 
-No functional or public API changes.
+### Pricing semantics
+
+- **An unpriced extension is blank, and blank is the only way to say it.** A
+  zero is refused by the settings form and discarded by `PricingManager`,
+  whatever strategy produced it. Drupal's typed configuration casts on save, so
+  a malformed value imported into `extension_prices` is stored as `0.0` before
+  any code can object; discarding zero is what stops one bad config import from
+  advertising every domain on the site as free. Selling at zero is not a
+  supported configuration in this release.
+- Switching pricing mode never discards the other mode's settings. The
+  fixed-price field is hidden — and therefore unvalidated — while per-extension
+  pricing is selected, and an empty submission keeps whatever is stored rather
+  than normalising it.
 
 ## [1.0.0] — 2026-07-22
 

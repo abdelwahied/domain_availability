@@ -1,0 +1,82 @@
+# Refuses a tag whose contents disagree with its name.
+#
+# WHY THIS EXISTS — 1.0.1 shipped with `extra.drupal.version` still reading
+# 1.0.0. Four files state the version and nothing compared them, so the mistake
+# was invisible until someone read the packaged archive. Drupal.org builds its
+# release from the tag; a tag is the one thing that cannot be quietly corrected
+# after the fact.
+#
+# Runs on tag pushes only. It cannot stop the tag from existing — nothing can,
+# once pushed — but it fails loudly and immediately, before the Drupal.org
+# release node is created, which is the point at which a tag becomes permanent
+# in practice. Deleting an unreleased tag is cheap; withdrawing a published
+# release is not.
+name: Release guard
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    name: Tag agrees with the tree
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare the tag against every file that states a version
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          # Both tag conventions point at the same release: `v1.1.0` on GitHub,
+          # `1.1.0` on Drupal.org. Only the bare form is ever a version.
+          version="${tag#v}"
+          echo "tag=${tag}  version=${version}"
+
+          fail=0
+          note() { echo "::error::$*"; fail=1; }
+
+          composer_version="$(
+            awk '/"drupal"[[:space:]]*:/{f=1} f && /"version"[[:space:]]*:/{
+              gsub(/[^0-9.]/, "", $0); print; exit }' composer.json
+          )"
+          if [ -n "${composer_version}" ] && [ "${composer_version}" != "${version}" ]; then
+            note "composer.json extra.drupal.version is ${composer_version}, tag says ${version}"
+          fi
+
+          heading="$(grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md || true)"
+          if [ -z "${heading}" ]; then
+            note "CHANGELOG.md has no released version heading"
+          elif ! printf '%s' "${heading}" | grep -q "\[${version}\]"; then
+            note "topmost CHANGELOG entry is '${heading}', tag says ${version}"
+          elif ! printf '%s' "${heading}" | grep -Eq '[0-9]{4}-[0-9]{2}-[0-9]{2}'; then
+            note "CHANGELOG entry for ${version} carries no release date"
+          fi
+
+          readme_version="$(
+            grep -oE '\*\*Version:\*\*[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' README.md 2>/dev/null \
+              | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
+          )"
+          if [ -n "${readme_version}" ] && [ "${readme_version}" != "${version}" ]; then
+            note "README.md states ${readme_version}, tag says ${version}"
+          fi
+
+          if [ -d vendor ]; then
+            note "vendor/ is present in the tag — a contrib module ships source only"
+          fi
+
+          if [ "${fail}" -ne 0 ]; then
+            echo
+            echo "Do not create the Drupal.org release node for this tag."
+            echo "Delete the tag, fix the tree, tag again:"
+            echo "  git tag -d ${tag} && git push origin :refs/tags/${tag}"
+            exit 1
+          fi
+
+          echo "Tag ${tag} agrees with the tree."

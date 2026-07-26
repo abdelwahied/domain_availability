@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Drupal\domain_availability\Hook;
 
 use Drupal\Component\Serialization\Json;
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Url;
 use Drupal\domain_availability\Dto\CheckReport;
 use Drupal\domain_availability\Form\DomainRegistrationRequestForm;
+use Drupal\domain_availability\Pricing\PricingManager;
 use Drupal\domain_availability\Service\RegistrationSettings;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -33,14 +35,22 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
    *
    * @param \Drupal\domain_availability\Service\RegistrationSettings $registration
    *   The registration settings.
+   * @param \Drupal\domain_availability\Pricing\PricingManager $pricing
+   *   The pricing manager, read only for its cacheability.
    */
-  public function __construct(private readonly RegistrationSettings $registration) {}
+  public function __construct(
+    private readonly RegistrationSettings $registration,
+    private readonly PricingManager $pricing,
+  ) {}
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
-    return new static($container->get('domain_availability.registration_settings'));
+    return new static(
+      $container->get('domain_availability.registration_settings'),
+      $container->get('domain_availability.pricing_manager'),
+    );
   }
 
   /**
@@ -90,6 +100,20 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
         'label' => $labels[$status],
       ];
 
+      // Already resolved by PricingManager before the report got here; this
+      // only flattens it. The template never asks what something costs, which
+      // is what keeps a theme override from having to re-implement pricing.
+      if ($result->price !== NULL && $status === 'available') {
+        $row['price'] = [
+          'amount' => $result->price->amount,
+          'currency' => $result->price->currency,
+          'formatted' => $this->t('@amount @currency', [
+            '@amount' => $result->price->formatted(),
+            '@currency' => $result->price->currency,
+          ]),
+        ];
+      }
+
       // The registration button is an optional, self-contained add-on: it only
       // ever appears on an available result whose TLD the feature accepts, and
       // its absence leaves the original card untouched.
@@ -117,6 +141,25 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
     // The modal is opened by a use-ajax link, so the dialog behaviour must be
     // present wherever results render.
     $variables['#attached']['library'][] = 'core/drupal.dialog.ajax';
+
+    // The rendered prices belong to whatever the active strategy reads. The
+    // component itself is max-age 0, but this output can be embedded in
+    // something that is not, and a stale price is worse than a stale status.
+    $pricing = $this->pricing->getCacheableMetadata();
+
+    $variables['#cache']['tags'] = Cache::mergeTags(
+      $variables['#cache']['tags'] ?? [],
+      $pricing->getCacheTags(),
+    );
+    $variables['#cache']['contexts'] = Cache::mergeContexts(
+      $variables['#cache']['contexts'] ?? [],
+      $pricing->getCacheContexts(),
+    );
+    $variables['#cache']['max-age'] = Cache::mergeMaxAges(
+      $variables['#cache']['max-age'] ?? Cache::PERMANENT,
+      $pricing->getCacheMaxAge(),
+    );
+
     $variables['summary'] = [
       'query' => $report->query,
       'count' => count($report->results),
