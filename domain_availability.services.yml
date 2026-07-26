@@ -158,11 +158,17 @@ services:
       - '@cache_tags.invalidator'
       - '@datetime.time'
 
+  # The wall-clock ceiling for one check, shared by every client that spends
+  # time on it. Stateful for the length of a check and no longer.
+  domain_availability.lookup_budget:
+    class: Drupal\domain_availability\Service\LookupBudget
+
   domain_availability.http_client:
     class: Drupal\domain_availability\Service\ParallelHttpClient
     arguments:
       - '@http_client'
       - '@domain_availability.settings'
+      - '@domain_availability.lookup_budget'
 
   domain_availability.host_resolver:
     class: Drupal\domain_availability\Service\HostResolver
@@ -170,6 +176,7 @@ services:
       - '@domain_availability.cache'
       - '@logger.channel.domain_availability'
       - '@domain_availability.settings'
+      - '@domain_availability.lookup_budget'
 
   # --- Lookup plumbing ------------------------------------------------------
 
@@ -178,6 +185,7 @@ services:
     arguments:
       - '@domain_availability.host_resolver'
       - '@domain_availability.settings'
+      - '@domain_availability.lookup_budget'
 
   domain_availability.whois_parser:
     class: Drupal\domain_availability\Service\WhoisResponseParser
@@ -270,6 +278,49 @@ services:
     arguments:
       - !tagged_iterator domain_availability_provider
 
+  # --- Pricing --------------------------------------------------------------
+  #
+  # One strategy is active at a time, named by `pricing.mode`, and a strategy's
+  # id is that mode value. Adding a pricing model — provider, premium,
+  # promotional, currency-aware — is one class plus one tagged service here:
+  # the manager, the settings form and the templates discover it, so none of
+  # them changes. Tag weight only orders collection; the strategy's own
+  # weight() orders the radios.
+
+  domain_availability.pricing_settings:
+    class: Drupal\domain_availability\Pricing\PricingSettings
+    arguments:
+      - '@config.factory'
+
+  domain_availability.pricing.fixed:
+    class: Drupal\domain_availability\Pricing\FixedPriceStrategy
+    arguments:
+      - '@domain_availability.pricing_settings'
+      - '@string_translation'
+    tags:
+      - { name: domain_availability_pricing_strategy, priority: 100 }
+
+  domain_availability.pricing.extension:
+    class: Drupal\domain_availability\Pricing\ExtensionPriceStrategy
+    arguments:
+      - '@domain_availability.pricing_settings'
+      - '@string_translation'
+      - '@domain_availability.settings'
+    tags:
+      - { name: domain_availability_pricing_strategy, priority: 90 }
+
+  domain_availability.pricing_strategy_registry:
+    class: Drupal\domain_availability\Pricing\PricingStrategyRegistry
+    arguments:
+      - !tagged_iterator domain_availability_pricing_strategy
+
+  domain_availability.pricing_manager:
+    class: Drupal\domain_availability\Pricing\PricingManager
+    arguments:
+      - '@domain_availability.pricing_strategy_registry'
+      - '@domain_availability.pricing_settings'
+      - '@logger.channel.domain_availability'
+
   # --- Application services -------------------------------------------------
 
   domain_availability.checker:
@@ -279,6 +330,8 @@ services:
       - '@domain_availability.cache'
       - '@logger.channel.domain_availability'
       - '@domain_availability.settings'
+      - '@domain_availability.lookup_budget'
+      - '@domain_availability.pricing_manager'
 
   domain_availability.validator:
     class: Drupal\domain_availability\Validator\DomainValidator

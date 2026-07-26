@@ -53,10 +53,13 @@ final class DomainAvailabilityTwigExtension extends AbstractExtension {
   public function renderSearch(): mixed {
     $build = ['#type' => 'domain_availability_search'];
 
-    // renderInIsolation(): the component carries max-age 0, and bubbling that
-    // up would make the whole page uncacheable just because a template happens
-    // to call this function. Available on every supported core (Drupal 10.3+).
-    return $this->renderer->renderInIsolation($build);
+    // render(), not renderInIsolation(): isolation drops all bubbleable
+    // metadata, and #attached travels in the same channel as #cache, so the
+    // libraries went with it — no CSS, no AJAX, and a form marked permanently
+    // cacheable while carrying a per-build form_build_id. Bubbling into the
+    // caller's context is what the block plugin and the page controller
+    // already rely on.
+    return $this->renderer->render($build);
   }
 
 }

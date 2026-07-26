@@ -6,6 +6,7 @@ namespace Drupal\Tests\domain_availability\Kernel;
 
 use Drupal\domain_availability\Dto\DomainStatus;
 use Drupal\domain_availability\Service\DomainCheckService;
+use Drupal\domain_availability_test\Provider\SlowProvider;
 use Drupal\KernelTests\KernelTestBase;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\Attributes\Group;
@@ -171,6 +172,39 @@ final class DomainCheckServiceTest extends KernelTestBase {
   }
 
   /**
+   * A slow group stops the check instead of overrunning the budget.
+   *
+   * The budget used to be read only at the top of a round, so one slow group
+   * could run the whole round — and, with four rounds, the request — past
+   * `max_lookup_time` and into PHP's execution limit. The `.sa` group here
+   * spends the entire budget on its own; everything after it must come back
+   * unanswered rather than being attempted anyway.
+   */
+  public function testSlowGroupEndsTheCheckWithinBudget(): void {
+    $this->config('domain_availability.settings')
+      ->set('tlds', ['sa', 'com', 'net'])
+      ->set('max_lookup_time', 1)
+      ->save();
+
+    $this->container->get('state')->setMultiple([
+      SlowProvider::TLD_KEY => 'sa',
+      SlowProvider::DELAY_KEY => 1200,
+    ]);
+
+    $started = microtime(TRUE);
+    $report = $this->checker->check('slowly');
+    $elapsed = microtime(TRUE) - $started;
+
+    $byDomain = $this->index($report);
+
+    self::assertSame('slow', $byDomain['slowly.sa']->provider);
+    self::assertSame(DomainStatus::Unknown, $byDomain['slowly.com']->status);
+    self::assertSame('no_provider_available', $byDomain['slowly.com']->reason);
+    self::assertSame(DomainStatus::Unknown, $byDomain['slowly.net']->status);
+    self::assertLessThan(3.0, $elapsed);
+  }
+
+  /**
    * The API payload keeps the standalone contract.
    */
   public function testReportArrayShape(): void {
@@ -183,7 +217,9 @@ final class DomainCheckServiceTest extends KernelTestBase {
     self::assertArrayHasKey('results', $payload);
 
     $first = $payload['results'][0];
-    self::assertSame(['domain', 'extension', 'available', 'status', 'provider'], array_keys($first));
+    // `price` was added in 1.1.0, after the five keys the standalone
+    // application's contract defined; those five are unchanged.
+    self::assertSame(['domain', 'extension', 'available', 'status', 'provider', 'price'], array_keys($first));
     self::assertSame('taken.com', $first['domain']);
     self::assertSame('.com', $first['extension']);
     self::assertFalse($first['available']);

@@ -397,8 +397,10 @@ final class DomainRegistrationTest extends BrowserTestBase {
     self::assertTrue($payload['success']);
     self::assertArrayNotHasKey('register', $payload);
 
+    // The registration feature adds nothing to the API payload. `price` is
+    // there because pricing ships enabled, not because registration is.
     foreach ($payload['results'] as $result) {
-      self::assertSame(['domain', 'extension', 'available', 'status', 'provider'], array_keys($result));
+      self::assertSame(['domain', 'extension', 'available', 'status', 'provider', 'price'], array_keys($result));
     }
   }
 

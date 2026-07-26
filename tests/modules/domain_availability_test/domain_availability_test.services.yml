@@ -5,3 +5,11 @@ services:
     class: Drupal\domain_availability_test\Provider\StubProvider
     tags:
       - { name: domain_availability_provider, priority: 1000 }
+
+  # Claims nothing until a test sets its state keys.
+  domain_availability_test.slow_provider:
+    class: Drupal\domain_availability_test\Provider\SlowProvider
+    arguments:
+      - '@state'
+    tags:
+      - { name: domain_availability_provider, priority: 1001 }

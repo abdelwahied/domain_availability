@@ -11,6 +11,10 @@ use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\domain_availability\Entity\DomainRegistrationRequestInterface;
+use Drupal\domain_availability\Pricing\ExtensionPriceStrategy;
+use Drupal\domain_availability\Pricing\FixedPriceStrategy;
+use Drupal\domain_availability\Pricing\PricingSettings;
+use Drupal\domain_availability\Service\ModuleSettings;
 
 /**
  * Implements hook_requirements().
@@ -174,4 +178,30 @@ function domain_availability_update_10003(): string {
     ->execute();
 
   return (string) t('Added the applicant type field.');
+}
+
+/**
+ * Adds the pricing configuration.
+ *
+ * Purely additive: sites that upgrade get the same defaults a fresh install
+ * gets, and anything already stored under `pricing` — a site that got there
+ * first by importing configuration — is left exactly as it is.
+ */
+function domain_availability_update_10004(): string {
+  $config = \Drupal::configFactory()->getEditable(ModuleSettings::CONFIG_NAME);
+  $pricing = $config->get(PricingSettings::CONFIG_KEY);
+
+  if (is_array($pricing) && $pricing !== []) {
+    return (string) t('Pricing configuration already present; nothing to do.');
+  }
+
+  $config
+    ->set(PricingSettings::CONFIG_KEY, [
+      PricingSettings::MODE_KEY => FixedPriceStrategy::ID,
+      FixedPriceStrategy::PRICE_KEY => 35.00,
+      ExtensionPriceStrategy::PRICES_KEY => [],
+    ])
+    ->save();
+
+  return (string) t('Added pricing configuration, defaulting to a single fixed price.');
 }

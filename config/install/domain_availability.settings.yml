@@ -19,6 +19,10 @@ tlds:
   - digital
   - me
   - info
+pricing:
+  mode: fixed
+  fixed_price: 35.00
+  extension_prices: {}
 cache_enabled: true
 cache_ttl: 600
 rdap_enabled: true

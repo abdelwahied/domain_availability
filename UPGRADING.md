@@ -37,6 +37,50 @@ For a patch or minor release within the same major version:
 
 No manual steps are ever required for a patch or minor release.
 
+## Version 1.1.0 — pricing
+
+**Upgrade steps: run `drush updatedb`.** Nothing else is required, and nothing
+existing changes behaviour.
+
+`domain_availability_update_10004()` adds a `pricing` mapping to
+`domain_availability.settings`, defaulting to the same values a fresh install
+gets:
+
+```yaml
+pricing:
+  mode: fixed
+  fixed_price: 35.00
+  extension_prices: {}
+```
+
+If your site already has a `pricing` key — because you imported configuration
+that included one — the update leaves it exactly as it is.
+
+**After updating, review the price.** The default of `35.00` is a placeholder,
+and after the update every available result is shown carrying it. Set your own
+at **Configuration → System → Domain Availability → Pricing**, or select
+per-extension pricing and fill in the generated table.
+
+### What this changes for existing consumers
+
+| Surface | Change |
+| --- | --- |
+| `GET /domain-check` | Each result gains a `price` object. Every key a 1.0.0 client read is unchanged, in the same order. A site with no `pricing` configured returns exactly the 1.0.0 keys. |
+| `DomainResult` | Gains a `$price` property, defaulting to `NULL`, as a sixth constructor parameter. Existing constructor calls and named constructors are unaffected. |
+| `DomainProviderInterface` | **Unchanged.** Providers do not price; pricing is applied after the lookup. A contributed provider needs no edit. |
+| `domain_availability.checker` | Unchanged signature. It now takes a `PricingManager` in its constructor — relevant only if you were instantiating it directly rather than pulling the service. |
+| Result cache | Unchanged, and prices are deliberately **not** stored in it. Existing cache entries stay valid across the update. |
+| Templates | `domain-availability-results.html.twig` renders a price when one is present. A theme override written for 1.0.0 keeps working, and simply shows no price until it opts in by rendering `result.price.formatted`. |
+
+To turn pricing off entirely, clear the mode:
+
+```bash
+drush config:set domain_availability.settings pricing.mode ''
+```
+
+Results then render exactly as they did in 1.0.0, and the `price` key
+disappears from the JSON payload.
+
 ## Version 1.0.0
 
 This is the first stable release. **No upgrade steps are required** — there is

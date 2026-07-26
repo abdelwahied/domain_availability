@@ -1,12 +1,25 @@
 # Domain Availability
 
-[![CI](https://github.com/abdelwahied/domain_availability/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/abdelwahied/domain_availability/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/abdelwahied/domain_availability?sort=semver)](https://github.com/abdelwahied/domain_availability/releases/latest)
-[![License](https://img.shields.io/github/license/abdelwahied/domain_availability)](LICENSE.txt)
+<!--
+CI and release badges — enable once this module has its own repository and its
+first tag. Replace OWNER/REPO with the repository path. Do not enable them
+before the repository and release exist, or the images will 404.
+
+Build Status:
+[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+
+Latest Release:
+[![Latest release](https://img.shields.io/github/v/release/OWNER/REPO?sort=semver)](https://github.com/OWNER/REPO/releases)
+-->
+
+<!-- Build Status: (placeholder — see the comment above) -->
+[![License](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE.txt)
+<!-- Drupal Compatibility -->
 [![Drupal](https://img.shields.io/badge/Drupal-%5E10.3%20%7C%7C%20%5E11-blue.svg)](https://www.drupal.org)
 [![PHP](https://img.shields.io/badge/PHP-%E2%89%A5%208.3-blue.svg)](https://www.php.net)
+<!-- Latest Release: (placeholder — see the comment above) -->
 
-> **Compatibility:** Drupal `^10.3 || ^11`, PHP `>= 8.3`. **Version:** 1.0.0.
+> **Compatibility:** Drupal `^10.3 || ^11`, PHP `>= 8.3`. **Version:** 1.1.0.
 
 Checks a domain name across every configured TLD in one parallel sweep, using
 RDAP where the registry supports it and WHOIS everywhere else — and **never
@@ -106,6 +119,40 @@ TLDs to sweep, which providers are enabled, cache TTL, timeouts, rate limiting,
 logging and CORS origins. Twenty TLDs ship enabled, starting with `sa`, `com`,
 `net`, `org`, `io`.
 
+**→ Pricing**
+
+Two modes ship, and one is active at a time:
+
+| Mode | Stored as | What it does |
+| --- | --- | --- |
+| Same price for all domains | `pricing.mode: fixed` | Every extension is offered at `pricing.fixed_price` |
+| Different price per extension | `pricing.mode: extension` | Each extension takes its own price from `pricing.extension_prices` |
+
+```yaml
+pricing:
+  mode: fixed
+  fixed_price: 35.00
+  extension_prices: {}
+```
+
+`extension_prices` is keyed by the **dot-less, lower-case** TLD — `com`, not
+`.com` — so a key never depends on how it was typed. The per-extension table on
+the settings form is generated from the enabled TLD list: enable a TLD, save,
+and its row is there. Nothing is hardcoded, and no extension is special.
+
+An extension left blank is shown **without a price** — blank means "not sold
+here". The same applies to an extension nobody has priced at all.
+
+**Zero is not a price.** The form rejects it and `PricingManager` discards it,
+because Drupal's typed configuration casts a malformed imported value to `0.0`
+on save — so accepting zero would let one bad config import advertise every
+domain on the site as free. Leave the field blank instead; that is the
+unambiguous way to say an extension is not for sale.
+
+Prices are attached to results *after* the lookup cache, so changing one takes
+effect on the next search rather than when the result cache expires. Both modes
+keep their own settings, so switching between them and back loses nothing.
+
 **→ Registration settings**
 
 Whether the request feature is on, which TLDs accept requests (`sa` by default;
@@ -191,7 +238,26 @@ priority does not decide. A worked example is in
 extension points is in
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-extend-business-logic).
 
-The module dispatches no custom events in 1.0.0.
+**Pricing** works the same way. A pricing model is one class implementing
+`PricingStrategyInterface` plus one service tagged
+`domain_availability_pricing_strategy`:
+
+```yaml
+services:
+  my_module.pricing.promotional:
+    class: Drupal\my_module\Pricing\PromotionPricingStrategy
+    arguments: ['@domain_availability.pricing_settings', '@string_translation']
+    tags:
+      - { name: domain_availability_pricing_strategy }
+```
+
+A strategy's `id()` *is* its `pricing.mode` value, so tagging one adds a radio
+to the settings form and a mode to the configuration. Implement
+`ConfigurablePricingStrategyInterface` as well and it also brings its own
+settings fields, validation and stored shape — `SettingsForm` is not edited
+either. See [CONTRIBUTING.md](CONTRIBUTING.md#how-to-add-a-pricing-strategy).
+
+The module dispatches no custom events in 1.1.0.
 
 ## Architecture
 
@@ -208,7 +274,20 @@ ProviderRegistry — services tagged domain_availability_provider
         │
         ▼
 CheckReport { query, results[], tookMs, cached }
+        │
+        ▼
+PricingManager ──► PricingStrategyRegistry
+        │            services tagged domain_availability_pricing_strategy
+        │            fixed | extension — one active, named by pricing.mode
+        ▼
+CheckReport with a PriceValue on each DomainResult
 ```
+
+Pricing is a decoration step, not a lookup step. It runs on the way out of
+`DomainCheckService`, after the result cache, so a price is never stored
+alongside a registry's answer and never outlives the configuration that
+produced it. The presentation layer only renders what is already on the
+result — no template, controller or form asks what a domain costs.
 
 Registration requests are a separate, optional layer: a content entity, a modal
 form, an admin workflow and two emails. Identification numbers on that entity are

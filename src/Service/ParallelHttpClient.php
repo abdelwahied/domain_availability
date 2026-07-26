@@ -41,10 +41,13 @@ final class ParallelHttpClient {
    *   Drupal's http_client service.
    * @param \Drupal\domain_availability\Service\ModuleSettings $settings
    *   The module settings.
+   * @param \Drupal\domain_availability\Service\LookupBudget $budget
+   *   The shared lookup budget.
    */
   public function __construct(
     private readonly ClientInterface $httpClient,
     private readonly ModuleSettings $settings,
+    private readonly LookupBudget $budget,
   ) {}
 
   /**
@@ -76,10 +79,15 @@ final class ParallelHttpClient {
     $responses = [];
     $startedAt = microtime(TRUE);
 
+    // Clamped to the check budget, so the last provider in a chain cannot
+    // start a 3-second request when 200 ms of the ceiling remain.
+    $timeout = $this->budget->clampMs($timeoutMs ?? $this->settings->rdapTimeoutMs());
+    $connectTimeout = min($timeout, $connectTimeoutMs ?? $this->settings->rdapConnectTimeoutMs());
+
     $options = [
       RequestOptions::HTTP_ERRORS => FALSE,
-      RequestOptions::TIMEOUT => ($timeoutMs ?? $this->settings->rdapTimeoutMs()) / 1000,
-      RequestOptions::CONNECT_TIMEOUT => ($connectTimeoutMs ?? $this->settings->rdapConnectTimeoutMs()) / 1000,
+      RequestOptions::TIMEOUT => $timeout / 1000,
+      RequestOptions::CONNECT_TIMEOUT => $connectTimeout / 1000,
       RequestOptions::ALLOW_REDIRECTS => [
         'max' => 3,
         'strict' => TRUE,

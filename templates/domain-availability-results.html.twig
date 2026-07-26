@@ -12,6 +12,9 @@
  *   - available: true|false|null.
  *   - provider: the provider that answered.
  *   - reason: why an unknown result is unknown (optional).
+ *   - price: what the domain costs, when the site prices its extension and the
+ *     domain is available (optional). Has amount, currency and formatted; use
+ *     formatted, which is already translated and rounded.
  * - summary: query, count, available_count, took_ms, cached.
  *
  * Every value is escaped by Twig's autoescape. Override this template in your
@@ -49,6 +52,12 @@
             {{ result.label }}
           </span>
         </div>
+        {% if result.price %}
+          <p class="domain-availability-card__price" dir="auto">
+            <span class="visually-hidden">{{ 'Price'|t }}:</span>
+            {{ result.price.formatted }}
+          </p>
+        {% endif %}
         {% if result.register %}
           {{ result.register }}
         {% endif %}

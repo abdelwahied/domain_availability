@@ -1,19 +1,38 @@
 # Releasing
 
-A step-by-step checklist for cutting a release of the Domain Availability module.
-It assumes no prior knowledge of the project: follow it top to bottom.
+How a release of this module is cut. Follow it top to bottom; it assumes no
+prior knowledge.
 
-Throughout, `X.Y.Z` is the version being released (for example `1.0.0`).
+Throughout, `X.Y.Z` is the version being released (for example `1.1.0`).
+
+> **Where development happens.** This repository is the *published* form of the
+> module. Development happens in a monorepo that also holds sibling modules, and
+> releases are synchronised from there by a script. If you are reading this in
+> the monorepo, the full procedure — including the sync step — is in
+> `RELEASE-WORKFLOW.md` at its root. If you are reading this in the public
+> repository, sections 1–6 still apply and the sync step is somebody else's
+> first step.
+
+## 0. Two tags, one commit
+
+| Host | Tag | Why |
+| --- | --- | --- |
+| GitHub | `vX.Y.Z` | Repository convention, matching `v1.0.0` and `v1.0.1`. |
+| Drupal.org | `X.Y.Z` | Drupal.org reads the tag as the version. **A `v` prefix is not recognised and the release will not build.** |
+
+Both tags point at the same commit. Every file that *states* a version uses the
+bare `X.Y.Z` form.
+
+Drupal.org also expects a contrib branch per minor series: `1.0.x`, `1.1.x`.
 
 ## 1. Prepare
 
-- [ ] Work from a clean checkout of the branch you are releasing from
-      (`git status` shows nothing uncommitted).
-- [ ] Confirm you are on the intended branch (`main` for the current major).
+- [ ] Work from a clean checkout of the branch you are releasing from.
+- [ ] Confirm the target: `main` on GitHub, `X.Y.x` on Drupal.org.
 
 ## 2. Run the test suite
 
-Tests run inside a Drupal site with the module — and its `saudi_id_validator`
+Tests run inside a Drupal site with this module — and its `saudi_id_validator`
 dependency — placed in `web/modules/custom/`. Functional tests need a served,
 installed site. From that site's root:
 
@@ -25,17 +44,21 @@ BROWSERTEST_OUTPUT_DIRECTORY="$PWD/web/sites/simpletest/browser_output" \
   web/modules/custom/domain_availability/tests
 ```
 
-- [ ] Every test passes. (One upstream-core deprecation is expected; a second is
-      a regression.)
+- [ ] Zero failures.
 
-CI runs the same suite across PHP 8.3/8.5 and Drupal 10.3/11 on every push; a
-green run on the release commit is the authoritative check.
+> Deprecation **counts** are not a signal on a shared local site: contrib
+> modules installed alongside produce their own. Check the *source file* of any
+> deprecation. CI builds a throwaway site containing only this module, which is
+> where the count means something.
+
+CI runs the same suite across PHP 8.3/8.5 and Drupal 10.3/11 on every pull
+request; a green run on the release commit is the authoritative check.
 
 ## 3. Run the coding-standards check
 
 ```bash
 ./vendor/bin/phpcs --standard=Drupal,DrupalPractice \
-  --extensions=php,module,inc,install,yml,js \
+  --extensions=php,module,inc,install,yml,js '--ignore=*/.github/*' \
   web/modules/custom/domain_availability
 ```
 
@@ -43,18 +66,28 @@ green run on the release commit is the authoritative check.
 
 ## 4. Review the changelog
 
-- [ ] [CHANGELOG.md](CHANGELOG.md) has an entry for `X.Y.Z` describing every
-      notable change since the last release.
-- [ ] The entry is dated and the "Unreleased" heading (if any) is moved down.
+- [ ] [CHANGELOG.md](CHANGELOG.md) has a `## [X.Y.Z] — YYYY-MM-DD` heading
+      describing every notable change since the last release.
+- [ ] `## [Unreleased]` sits above it and reads `Nothing yet.`
+- [ ] No entry describes a fix to code that was never released. Describe the
+      shipped behaviour instead; a user who never saw the bug should not have to
+      read about it.
 
-## 5. Update documentation
+## 5. Update documentation and version fields
 
-- [ ] [README.md](README.md) examples still match the code.
-- [ ] [API.md](API.md) lists the current public surface, including the provider
-      extension point and the documented service parameters.
+Four places state the version. They must agree, or Drupal.org will package an
+archive that contradicts its own tag.
+
+- [ ] `composer.json` → `extra.drupal.version` is `X.Y.Z`
+- [ ] `CHANGELOG.md` → topmost released heading is `[X.Y.Z]`, dated
+- [ ] `README.md` → the `**Version:**` line reads `X.Y.Z`
 - [ ] [UPGRADING.md](UPGRADING.md) has a section for `X.Y.Z` if any manual step
-      is needed (none for a patch or minor).
-- [ ] Version references in prose and badges are correct.
+      is needed
+- [ ] [API.md](API.md) lists the current public surface
+
+Automated: `scripts/release/preflight.sh domain_availability X.Y.Z` in the
+monorepo checks all of the above, and the `release-guard` workflow re-checks
+them when the tag is pushed.
 
 ## 6. Verify composer metadata
 
@@ -63,47 +96,90 @@ composer validate --strict --no-check-all
 ```
 
 - [ ] Passes.
-- [ ] `name`, `description`, `license`, `keywords`, `require` (including the
-      `ext-*` and `saudi_id_validator` dependency) and `authors` are accurate.
+- [ ] `name`, `description`, `license`, `keywords`, `homepage`, `require`
+      (including `ext-*` and the `saudi_id_validator` dependency) and `authors`
+      are accurate.
 - [ ] No `repositories`, path repositories or VCS repositories are present.
 
-## 7. Verify the README examples
+## 7. Open the pull request
 
-- [ ] Every service ID, route name (`domain_availability.search`,
-      `domain_availability.api_check`, `domain_availability.api_health`) and
-      configuration key named in the README exists in the code.
-
-## 8. Tag the release
-
-Drupal.org and Composer both read the tag as the version, so it must match
-`X.Y.Z` with no `v` prefix for Drupal.org contrib.
+`main` is protected: linear history, no force pushes, and three required status
+checks. A release lands through a pull request.
 
 ```bash
-git tag -a X.Y.Z -m "Domain Availability X.Y.Z"
+git push -u origin release/X.Y.Z
+gh pr create --base main --head release/X.Y.Z \
+  --title "release: X.Y.Z" --body-file CHANGELOG.md
+gh pr checks --watch
+gh pr merge --squash --delete-branch
 ```
 
-- [ ] Tag created on the reviewed commit.
+- [ ] All three checks green, PR merged.
 
-## 9. Push the tag
+## 8. Tag both hosts
 
 ```bash
-git push origin X.Y.Z
+git checkout main && git pull
+
+git tag -a vX.Y.Z -m "domain_availability X.Y.Z"
+git push origin vX.Y.Z
+
+git remote add drupal https://git.drupalcode.org/project/domain_availability.git
+git push drupal main:X.Y.x
+git tag -a X.Y.Z -m "domain_availability X.Y.Z"
+git push drupal X.Y.Z
 ```
 
-- [ ] Tag pushed. CI runs against the tag.
+- [ ] Both tags point at the merge commit.
+- [ ] The `release-guard` workflow passed on the GitHub tag. **If it failed,
+      stop** — delete both tags and fix the tree before going further.
 
-## 10. Publish release notes
+## 9. Publish release notes
 
-- [ ] Create the release on the hosting platform (GitHub release or Drupal.org
-      release node) using the `X.Y.Z` CHANGELOG entry as the notes.
-- [ ] Confirm the packaged archive installs cleanly on a fresh site (with the
-      `saudi_id_validator` dependency available).
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
+```
 
-## Notes for a repository split
+Then, on Drupal.org — manual, because there is no supported API:
 
-This module currently lives alongside others in one repository. When it is moved
-to its own repository, copy `.github/workflows/ci.yml` and
-`.github/workflows/reusable-drupal-module.yml` into it and change the module
-path in the reusable workflow from `modules/custom/domain_availability` to the
-repository root. The workflow already copies `saudi_id_validator` alongside for
-the dependency; adjust that to a `composer require` once both are published.
+1. <https://www.drupal.org/node/add/project-release/domain_availability>
+2. Select tag `X.Y.Z`.
+3. Paste the `X.Y.Z` CHANGELOG entry as the release notes.
+4. Set the release type to match the CHANGELOG.
+5. Save; packaging runs within roughly fifteen minutes.
+
+- [ ] The archive installs cleanly on a fresh site, with `saudi_id_validator`
+      available.
+
+## 10. Rollback
+
+**Before the Drupal.org release node exists** — remove the tags:
+
+```bash
+git push origin :refs/tags/vX.Y.Z
+git push drupal  :refs/tags/X.Y.Z
+gh release delete vX.Y.Z --yes
+```
+
+**After it exists** — do not delete it. Someone may have installed it, and a
+version that vanishes breaks their `composer.lock`. Unpublish the release node
+and fix forward with a patch. `X.Y.Z+1` an hour later is a smaller event than a
+release that disappears.
+
+`main` has linear history, so revert rather than rewrite:
+
+```bash
+git revert <merge-sha>
+```
+
+A revert made here must be reapplied in the monorepo, or the next release will
+silently undo it.
+
+## 11. Security releases
+
+Follow [SECURITY.md](SECURITY.md) first. Coordinate with the Drupal Security
+Team **before** anything becomes public — that includes the tag, the pull
+request and the CHANGELOG entry.
+
+This project is currently **not covered** by a security advisory policy; the
+coverage application is awaiting review.
