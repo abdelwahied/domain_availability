@@ -43,6 +43,9 @@ final class StatusReportService {
    *   The module settings.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service.
+   * @param \Drupal\domain_availability\Service\BoundedDnsResolver $dns
+   *   The bounded resolver, reported on because a resolver that cannot answer
+   *   is a more common outage than a blocked WHOIS port and was invisible.
    */
   public function __construct(
     private readonly ProviderRegistry $registry,
@@ -50,6 +53,7 @@ final class StatusReportService {
     private readonly WhoisServerResolver $whoisServers,
     private readonly ModuleSettings $settings,
     private readonly TimeInterface $time,
+    private readonly BoundedDnsResolver $dns,
   ) {}
 
   /**
@@ -64,6 +68,7 @@ final class StatusReportService {
       'providers_registered' => $this->registry->all() !== [],
       'json_available' => extension_loaded('json'),
       'sockets_available' => function_exists('stream_socket_client'),
+      'dns_resolver_configured' => $this->dns->isUsable(),
     ];
 
     $healthy = !in_array(FALSE, $checks, TRUE);
@@ -73,7 +78,10 @@ final class StatusReportService {
       'status' => $healthy ? 'ok' : 'degraded',
       'timestamp' => date('c', $this->time->getRequestTime()),
       'checks' => $checks,
-      'diagnostics' => ['whois_egress' => $this->whoisEgress()],
+      'diagnostics' => [
+        'whois_egress' => $this->whoisEgress(),
+        'dns_nameservers' => count($this->dns->nameservers()),
+      ],
       'providers' => $this->registry->names(),
       'tld_count' => count($this->settings->tlds()),
     ];

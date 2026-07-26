@@ -37,6 +37,22 @@ For a patch or minor release within the same major version:
 
 No manual steps are ever required for a patch or minor release.
 
+## Version 1.1.1 — bounded DNS
+
+**Upgrade steps: run `drush updatedb`.** No configuration or API changes.
+
+`domain_availability_update_10005()` adds `dns_query_timeout_ms` (1500) and
+raises `whois_dns_ttl` from 300 to 86400 — but only where it is still the old
+shipped default. A site that chose its own value keeps it.
+
+DNS lookups are now bounded by `max_lookup_time` like every other provider. A
+resolver that stops answering degrades the affected TLDs to `unknown` instead of
+running the request into PHP's `max_execution_time`.
+
+If no nameserver can be discovered from the resolver configuration, the DNS
+delegation fallback switches itself off and WHOIS connects by hostname; the
+status report and the status page both say so.
+
 ## Version 1.1.0 — pricing
 
 **Upgrade steps: run `drush updatedb`.** Nothing else is required, and nothing

@@ -6,6 +6,8 @@ namespace Drupal\domain_availability\Provider;
 
 use Drupal\domain_availability\Dto\DomainResult;
 use Drupal\domain_availability\Utility\Tld;
+use Drupal\domain_availability\Service\BoundedDnsResolver;
+use Drupal\domain_availability\Service\LookupBudget;
 use Drupal\domain_availability\Service\ModuleSettings;
 use Psr\Log\LoggerInterface;
 
@@ -17,9 +19,14 @@ use Psr\Log\LoggerInterface;
  * plenty of registered domains are never delegated (parked, expired-but-held,
  * client-hold). So it can only ever prove `registered`, and returns `unknown`
  * for everything else instead of implying availability from silence.
- * It runs only when RDAP and WHOIS both failed to answer, which is why it is
- * acceptable that PHP's resolver API is synchronous: the batch reaching this
- * point is normally empty.
+ * It runs only when RDAP and WHOIS both failed to answer, so the batch reaching
+ * this point is normally empty — but "normally" is a statement about the happy
+ * path, and this code only runs once the happy path has already failed. The
+ * names it looks up come from the public search box, so the choice of which
+ * authoritative servers to wait on is the visitor's. Every query therefore goes
+ * through BoundedDnsResolver and the check budget is consulted before each one:
+ * with dns_get_record() this loop could spend the whole request, five times
+ * over, on names it did not choose.
  *
  * @internal
  *   One implementation of DomainProviderInterface.
@@ -31,6 +38,8 @@ final class DnsProvider implements DomainProviderInterface {
   public function __construct(
     private readonly LoggerInterface $logger,
     private readonly ModuleSettings $settings,
+    private readonly BoundedDnsResolver $resolver,
+    private readonly LookupBudget $budget,
   ) {
   }
 
@@ -56,7 +65,11 @@ final class DnsProvider implements DomainProviderInterface {
    * registry only reaches it as the final fallback.
    */
   public function supports(string $tld): bool {
-    return $this->settings->dnsFallbackEnabled() && $tld !== '' && function_exists('dns_get_record');
+    // The resolver is unusable when no nameserver could be discovered. Saying
+    // so here is deliberate: the alternative is falling back to
+    // dns_get_record(), and an unbounded query is exactly what this provider
+    // must never make.
+    return $this->settings->dnsFallbackEnabled() && $tld !== '' && $this->resolver->isUsable();
   }
 
   /**
@@ -68,6 +81,19 @@ final class DnsProvider implements DomainProviderInterface {
     // Bounded on purpose: each query is blocking, and this path exists to
     // rescue a handful of stragglers, not to resolve a full batch.
     foreach (array_slice($domains, 0, self::MAX_DOMAINS) as $domain) {
+      // Checked per domain, not once for the loop: five queries share one
+      // budget, and the fifth must not start on time the first four spent.
+      if ($this->budget->exhausted()) {
+        $results[$domain] = DomainResult::unknown(
+          $domain,
+          Tld::withDot(Tld::fromDomain($domain)),
+          $this->name(),
+          'budget_exhausted',
+        );
+
+        continue;
+      }
+
       $results[$domain] = $this->check($domain);
     }
 
@@ -95,10 +121,8 @@ final class DnsProvider implements DomainProviderInterface {
   private function check(string $domain): DomainResult {
     $extension = Tld::withDot(Tld::fromDomain($domain));
 
-    set_error_handler(static fn (): bool => TRUE);
-
     try {
-      $records = dns_get_record($domain, DNS_NS);
+      $records = $this->resolver->query($domain, BoundedDnsResolver::TYPE_NS, $this->settings->dnsQueryTimeoutMs());
     }
     catch (\Throwable $exception) {
       $this->logger->warning('DNS lookup failed.', [
@@ -108,11 +132,16 @@ final class DnsProvider implements DomainProviderInterface {
       ]);
 
       return DomainResult::unknown($domain, $extension, $this->name(), 'dns_error');
-    } finally {
-      restore_error_handler();
     }
 
-    if (is_array($records) && $records !== []) {
+    // Nothing answered. Emphatically not the same as "no delegation": this
+    // says something about the resolver, not about the domain, so it must not
+    // be reported as evidence either way.
+    if ($records === NULL) {
+      return DomainResult::unknown($domain, $extension, $this->name(), 'dns_timeout');
+    }
+
+    if ($records !== []) {
       return DomainResult::registered($domain, $extension, $this->name());
     }
 

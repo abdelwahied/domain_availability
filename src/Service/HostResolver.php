@@ -22,8 +22,13 @@ use Psr\Log\LoggerInterface;
  * is not unique to .sa: whois.verisign-grs.com, whois.nic.io and whois.nic.me
  * all publish AAAA records too. Handing the caller every address of the
  * preferred family lets it fall back instead of hanging on the first dead one;
- * the other family is queried only when the preferred one answers nothing,
- * because each DNS query is serial and cannot be given a timeout.
+ * the other family is queried only when the preferred one answers nothing.
+ *
+ * Resolution goes through BoundedDnsResolver rather than dns_get_record(),
+ * which takes no timeout: a single stalled query used to run to PHP's
+ * max_execution_time and end the request in a fatal. Because that resolver
+ * reports "nothing answered" separately from "answered, no records", a network
+ * failure is no longer cached as though it were a fact about the host.
  *
  * @internal
  *   Implementation detail of the WHOIS path.
@@ -47,6 +52,7 @@ final class HostResolver {
     private readonly LoggerInterface $logger,
     private readonly ModuleSettings $settings,
     private readonly LookupBudget $budget,
+    private readonly BoundedDnsResolver $resolver,
   ) {
   }
 
@@ -87,22 +93,24 @@ final class HostResolver {
       return $this->memo[$host] = $cached;
     }
 
-    // dns_get_record() takes no timeout, so the only way to keep it inside the
-    // check budget is not to call it once the budget is gone. System
-    // resolution is the class's own degraded answer; taking it here costs a
-    // possibly-dead first address, not the whole request.
+    // Queries are bounded now, but an exhausted budget still means there is no
+    // time to spend: system resolution is the class's own degraded answer, and
+    // taking it here costs a possibly-dead first address, not the request.
     if ($this->budget->exhausted()) {
       return $this->memo[$host] = [$host];
     }
 
     $candidates = $this->lookup($host);
 
-    if ($candidates === []) {
+    if ($candidates === NULL || $candidates === []) {
       $this->logger->warning('Host could not be resolved; falling back to system resolution.', [
         'host' => $host,
+        'reason' => $candidates === NULL ? 'no_answer' : 'no_records',
       ]);
 
-      // Not cached: a resolver hiccup must not be remembered for 5 minutes.
+      // Not cached either way, but for different reasons: an unanswered query
+      // is a fact about the network that must not be remembered, and a host
+      // with genuinely no address records is not one this module can use.
       return $this->memo[$host] = [$host];
     }
 
@@ -135,30 +143,43 @@ final class HostResolver {
    *
    * The other family is only queried when the preferred one answers nothing:
    * collecting both is a fallback for a host with no usable address in the
-   * preferred family, and a fallback should not be paid for up front. Every
-   * query here is serial and untimeoutable, so halving them halves the worst
-   * case of a cold sweep.
+   * preferred family, and a fallback should not be paid for up front. The
+   * queries are serial, so halving them still halves the worst case of a cold
+   * sweep — they are simply no longer unbounded while they run.
    *
    * @param string $host
    *   The hostname to resolve.
    *
-   * @return list<string>
-   *   The resolved addresses.
+   * @return list<string>|null
+   *   The resolved addresses, an empty array when the host has none, or NULL
+   *   when the resolver did not answer.
    */
-  private function lookup(string $host): array {
+  private function lookup(string $host): ?array {
     $preferIpv6 = $this->settings->whoisAddressFamily() === self::PREFER_IPV6;
 
     $preferred = $preferIpv6
-            ? $this->records($host, DNS_AAAA, 'ipv6')
-            : $this->records($host, DNS_A, 'ip');
+            ? $this->records($host, BoundedDnsResolver::TYPE_AAAA)
+            : $this->records($host, BoundedDnsResolver::TYPE_A);
+
+    // Nothing answered. Distinct from "answered with nothing": the caller must
+    // not cache this, and must not spend the rest of the budget asking the
+    // other family a question the resolver is already failing to answer.
+    if ($preferred === NULL) {
+      return NULL;
+    }
 
     if ($preferred !== [] || $this->budget->exhausted()) {
       return $preferred;
     }
 
-    return $preferIpv6
-            ? $this->records($host, DNS_A, 'ip')
-            : $this->records($host, DNS_AAAA, 'ipv6');
+    $other = $preferIpv6
+            ? $this->records($host, BoundedDnsResolver::TYPE_A)
+            : $this->records($host, BoundedDnsResolver::TYPE_AAAA);
+
+    // The preferred family answered conclusively with nothing, so an
+    // unanswered second query still leaves us knowing the host has no address
+    // in the family we prefer — which is an empty result, not an unknown one.
+    return $other ?? [];
   }
 
   /**
@@ -167,33 +188,25 @@ final class HostResolver {
    * @param string $host
    *   The hostname to resolve.
    * @param int $type
-   *   The DNS record type, e.g. DNS_A or DNS_AAAA.
-   * @param string $field
-   *   The record field holding the address, e.g. 'ip' or 'ipv6'.
+   *   The record type, one of the BoundedDnsResolver TYPE_* constants.
    *
-   * @return list<string>
-   *   The unique valid addresses.
+   * @return list<string>|null
+   *   The unique valid addresses, an empty array when the resolver answered
+   *   and there are none, or NULL when nothing answered in time.
    */
-  private function records(string $host, int $type, string $field): array {
-    // dns_get_record() emits warnings on NXDOMAIN and can return false;
-    // both are ordinary outcomes here, not errors worth surfacing.
-    $records = @dns_get_record($host, $type);
+  private function records(string $host, int $type): ?array {
+    $addresses = $this->resolver->query($host, $type, $this->settings->dnsQueryTimeoutMs());
 
-    if (!is_array($records)) {
-      return [];
+    if ($addresses === NULL) {
+      return NULL;
     }
 
-    $addresses = [];
+    $valid = array_values(array_filter(
+      $addresses,
+      static fn (string $address): bool => filter_var($address, FILTER_VALIDATE_IP) !== FALSE,
+    ));
 
-    foreach ($records as $record) {
-      $address = $record[$field] ?? NULL;
-
-      if (is_string($address) && filter_var($address, FILTER_VALIDATE_IP) !== FALSE) {
-        $addresses[] = $address;
-      }
-    }
-
-    return array_values(array_unique($addresses));
+    return array_values(array_unique($valid));
   }
 
 }

@@ -35,7 +35,8 @@ rdap_connect_timeout_ms: 2000
 whois_timeout_ms: 2500
 whois_connect_timeout_ms: 1500
 whois_address_family: ipv4
-whois_dns_ttl: 300
+whois_dns_ttl: 86400
+dns_query_timeout_ms: 1500
 rate_limit_enabled: true
 rate_limit_max_requests: 30
 rate_limit_window: 60

@@ -67,6 +67,9 @@ domain_availability.settings:
     whois_dns_ttl:
       type: integer
       label: 'Resolved WHOIS host address cache lifetime in seconds'
+    dns_query_timeout_ms:
+      type: integer
+      label: 'DNS query timeout in milliseconds'
     rate_limit_enabled:
       type: boolean
       label: 'Enable per-IP rate limiting'
