@@ -15,6 +15,27 @@ type id. Classes marked `@internal` may change in any release.
 
 Nothing yet.
 
+## [1.1.2] — 2026-07-27
+
+### Fixed
+
+- **Installing from the Git repository produced a module that could not be
+  enabled.** `domain_availability.info.yml` requires `saudi_id_validator`, but
+  `composer.json` never declared `drupal/saudi_id_validator`, so a Composer
+  install that reads this file directly — a VCS repository entry, or a checkout —
+  resolved without it. Drupal.org's own package metadata injects the dependency
+  from `info.yml`, so installs through `packages.drupal.org` were unaffected;
+  everything else had to add the sibling by hand.
+- The package now declares itself as `drupal/domain_availability` rather than
+  `abdelwahied/domain_availability`, matching the name it is distributed under.
+  Drupal.org already served it under that name regardless; a Git checkout did
+  not, which is what made a manual `composer remove drupal/domain_availability`
+  necessary before installing from a repository.
+
+Metadata only — no code, configuration or behaviour changes.
+
+Reported by the maintainers of grid.sa while installing 1.1.1 from Git.
+
 ## [1.1.1] — 2026-07-27
 
 ### Fixed
