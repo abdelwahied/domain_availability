@@ -1,5 +1,5 @@
 {
-    "name": "abdelwahied/domain_availability",
+    "name": "drupal/domain_availability",
     "description": "Domain availability checker for Drupal 10/11 — parallel RDAP + WHOIS lookups across many TLDs, with an optional Saudi domain registration request workflow.",
     "type": "drupal-module",
     "homepage": "https://github.com/abdelwahied/domain_availability",
@@ -32,7 +32,8 @@
         "ext-json": "*",
         "ext-mbstring": "*",
         "ext-sockets": "*",
-        "drupal/core": "^10.3 || ^11"
+        "drupal/core": "^10.3 || ^11",
+        "drupal/saudi_id_validator": "^1.0"
     },
     "require-dev": {
         "drupal/core-dev": "^10.3 || ^11"
@@ -44,7 +45,7 @@
     },
     "extra": {
         "drupal": {
-            "version": "1.1.1"
+            "version": "1.1.2"
         }
     }
 }
