@@ -19,7 +19,7 @@ Latest Release:
 [![PHP](https://img.shields.io/badge/PHP-%E2%89%A5%208.3-blue.svg)](https://www.php.net)
 <!-- Latest Release: (placeholder — see the comment above) -->
 
-> **Compatibility:** Drupal `^10.3 || ^11`, PHP `>= 8.3`. **Version:** 1.1.0.
+> **Compatibility:** Drupal `^10.3 || ^11 || ^12`, PHP `>= 8.3`. **Version:** 1.2.0.
 
 Checks a domain name across every configured TLD in one parallel sweep, using
 RDAP where the registry supports it and WHOIS everywhere else — and **never

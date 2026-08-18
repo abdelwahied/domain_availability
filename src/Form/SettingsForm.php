@@ -167,7 +167,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'number',
       '#title' => $this->t('Maximum lookup time'),
       '#field_suffix' => $this->t('seconds'),
-      '#description' => $this->t('Total budget for one check across every provider round. Anything unresolved when the budget runs out is reported as "unknown" rather than holding the request open.'),
+      '#description' => $this->t('Total budget for one check across every provider round, including DNS. Anything unresolved when the budget runs out is reported as "unknown" rather than holding the request open.'),
       '#min' => 1,
       '#max' => 120,
       '#config_target' => $name . ':max_lookup_time',

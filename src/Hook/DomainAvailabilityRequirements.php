@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\domain_availability\Hook;
 
+use Drupal\Component\Utility\DeprecationHelper;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -58,7 +60,21 @@ final class DomainAvailabilityRequirements {
         'title' => new TranslatableMarkup('Domain Availability: sockets'),
         'value' => new TranslatableMarkup('stream_socket_client() is unavailable'),
         'description' => new TranslatableMarkup('WHOIS speaks raw TCP on port 43, so WHOIS-only TLDs cannot be checked. RDAP-backed TLDs still work.'),
-        'severity' => REQUIREMENT_WARNING,
+        'severity' => DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
+      ];
+    }
+
+    // A resolver that cannot answer is a more common outage than a blocked
+    // WHOIS port, and until now nothing surfaced it: the module simply became
+    // slow and inconclusive with no clue as to why.
+    $report = $this->statusReport->build();
+
+    if (($report['checks']['dns_resolver_configured'] ?? TRUE) === FALSE) {
+      $requirements['domain_availability_dns_resolver'] = [
+        'title' => new TranslatableMarkup('Domain Availability: DNS resolver'),
+        'value' => new TranslatableMarkup('No nameserver could be discovered'),
+        'description' => new TranslatableMarkup('The bounded DNS resolver found no nameserver to ask, so WHOIS hosts cannot be resolved to an address and the DNS delegation fallback is switched off. Lookups still work through RDAP and through WHOIS by hostname. Check that the resolver configuration file is readable by the web server.'),
+        'severity' => DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
       ];
     }
 
@@ -95,7 +111,7 @@ final class DomainAvailabilityRequirements {
         : new TranslatableMarkup('Port 43 blocked for @count TLD(s)', ['@count' => count($blocked)]),
       // A warning, never an error: a blocked port is a degraded lookup, not a
       // broken site. RDAP still answers for most TLDs.
-      'severity' => $blocked === [] ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+      'severity' => $blocked === [] ? DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::OK, fn() => REQUIREMENT_OK) : DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
       'description' => $blocked === []
         ? new TranslatableMarkup('WHOIS-only TLDs resolve normally: @list', [
           '@list' => implode(', ', array_map('strval', $reachable)),

@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\Component\Utility\DeprecationHelper;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -45,7 +47,7 @@ function domain_availability_requirements(string $phase): array {
       'title' => new TranslatableMarkup('Domain Availability: sockets'),
       'value' => new TranslatableMarkup('stream_socket_client() is unavailable'),
       'description' => new TranslatableMarkup('WHOIS speaks raw TCP on port 43, so WHOIS-only TLDs cannot be checked. RDAP-backed TLDs still work.'),
-      'severity' => REQUIREMENT_WARNING,
+      'severity' => DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
     ];
   }
 
@@ -85,7 +87,7 @@ function domain_availability_requirements(string $phase): array {
       : new TranslatableMarkup('Port 43 blocked for @count TLD(s)', ['@count' => count($blocked)]),
     // A warning, never an error: a blocked port is a degraded lookup, not a
     // broken site. RDAP still answers for most TLDs.
-    'severity' => $blocked === [] ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+    'severity' => $blocked === [] ? DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::OK, fn() => REQUIREMENT_OK) : DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
     'description' => $blocked === []
       ? new TranslatableMarkup('WHOIS-only TLDs resolve normally: @list', [
         '@list' => implode(', ', array_map('strval', $reachable)),
@@ -204,4 +206,37 @@ function domain_availability_update_10004(): string {
     ->save();
 
   return (string) t('Added pricing configuration, defaulting to a single fixed price.');
+}
+
+/**
+ * Adds the DNS query timeout, and raises the WHOIS address cache lifetime.
+ */
+function domain_availability_update_10005(): string {
+  $config = \Drupal::configFactory()->getEditable(ModuleSettings::CONFIG_NAME);
+  $changed = [];
+
+  // New in this release: a per-query ceiling for the bounded DNS resolver.
+  if ($config->get('dns_query_timeout_ms') === NULL) {
+    $config->set('dns_query_timeout_ms', 1500);
+    $changed[] = 'dns_query_timeout_ms';
+  }
+
+  // 300 seconds guaranteed that most real searches resolved WHOIS hosts from
+  // cold, which is exactly when a stalled resolver was reachable. Registry
+  // WHOIS addresses change on a scale of years, so a day is still cautious.
+  //
+  // Only the old shipped default is raised: a site that chose its own value
+  // chose it, and this update has no business overruling that.
+  if ((int) $config->get('whois_dns_ttl') === 300) {
+    $config->set('whois_dns_ttl', 86400);
+    $changed[] = 'whois_dns_ttl';
+  }
+
+  if ($changed === []) {
+    return (string) t('DNS settings already up to date; nothing was changed.');
+  }
+
+  $config->save();
+
+  return (string) t('Updated DNS settings: @keys.', ['@keys' => implode(', ', $changed)]);
 }

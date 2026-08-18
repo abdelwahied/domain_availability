@@ -2,7 +2,7 @@ name: 'Domain Availability'
 type: module
 description: 'Checks a domain name across many TLDs in one parallel sweep using RDAP and WHOIS, and never guesses: an unanswerable lookup reports "unknown", never "available".'
 package: 'Web services'
-core_version_requirement: ^10.3 || ^11
+core_version_requirement: ^10.3 || ^11 || ^12
 configure: domain_availability.settings
 dependencies:
   - drupal:file

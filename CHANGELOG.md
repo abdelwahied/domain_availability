@@ -15,6 +15,104 @@ type id. Classes marked `@internal` may change in any release.
 
 Nothing yet.
 
+## [1.2.0] — 2026-08-17
+
+### Added
+
+- **Drupal 12 compatibility.** `core_version_requirement` on the module and its
+  test module, and the Composer `drupal/core` and `drupal/core-dev`
+  constraints, now accept `^12` alongside the existing `^10.3 || ^11`.
+
+### Changed
+
+- Status-report severities are resolved through
+  `DeprecationHelper::backwardsCompatibleCall()`, so Drupal 11.2 and later
+  receive the `RequirementSeverity` enum while Drupal 10.3 keeps the
+  `REQUIREMENT_*` constants it still defines. All three checks — sockets, the
+  DNS resolver and WHOIS egress — are converted, in both the procedural
+  `hook_requirements()` and the object-oriented implementation.
+- The registration modal names its wrapper class through the dialog `classes`
+  map instead of jQuery UI's `dialogClass`, which Drupal 12 removes. Both the
+  `OpenModalDialogCommand` call and the `data-dialog-options` payload on the
+  results-list button were migrated; the rendered class, and therefore the
+  existing CSS, is unchanged. A functional test now asserts on the rendered
+  attribute, since these options travel as JSON and no static check sees them.
+- The Twig function is registered with a first-class callable.
+
+### Notes
+
+- No behavioural or public API change. Validated on Drupal 11.4.4; Drupal 12
+  and Drupal 10.3 compatibility is established by static analysis, as no
+  runtime for either was available.
+
+
+## [1.1.2] — 2026-07-27
+
+### Fixed
+
+- **Installing from the Git repository produced a module that could not be
+  enabled.** `domain_availability.info.yml` requires `saudi_id_validator`, but
+  `composer.json` never declared `drupal/saudi_id_validator`, so a Composer
+  install that reads this file directly — a VCS repository entry, or a checkout —
+  resolved without it. Drupal.org's own package metadata injects the dependency
+  from `info.yml`, so installs through `packages.drupal.org` were unaffected;
+  everything else had to add the sibling by hand.
+- The package now declares itself as `drupal/domain_availability` rather than
+  `abdelwahied/domain_availability`, matching the name it is distributed under.
+  Drupal.org already served it under that name regardless; a Git checkout did
+  not, which is what made a manual `composer remove drupal/domain_availability`
+  necessary before installing from a repository.
+
+Metadata only — no code, configuration or behaviour changes.
+
+Reported by the maintainers of grid.sa while installing 1.1.1 from Git.
+
+## [1.1.1] — 2026-07-27
+
+### Fixed
+
+- **A stalled DNS resolver could end a request in a fatal.** `dns_get_record()`
+  accepts no timeout, so 1.1.0 consulted `LookupBudget` between DNS calls but
+  nothing bounded a call once it had started. A resolver that stopped answering
+  ran the lookup to PHP's `max_execution_time`, which returned HTTP 500 on the
+  page holding the search box rather than a degraded result — and `watchdog`
+  recorded nothing, because the process died before the logger ran. Every other
+  failure in this module degrades to `unknown`; this one did not degrade at all.
+
+  Lookups now go through `BoundedDnsResolver`, a UDP stub resolver that reads
+  the nameservers from `/etc/resolv.conf`, writes the query itself and waits
+  with `stream_select()`. `max_lookup_time` now covers DNS as it already covered
+  WHOIS and RDAP.
+
+- **`DnsProvider` had no budget check at all** and ran up to five queries in a
+  loop on names taken from the public search box, so which authoritative servers
+  the site waited on was the visitor's choice. It now consults the budget before
+  each domain and reports `dns_timeout` separately from
+  `no_delegation_inconclusive` — the first is a fact about the network, the
+  second about the domain, and conflating them is what let a network failure be
+  cached as though it were a fact about the name.
+
+- A resolver that cannot answer at all is now reported on the status report and
+  in `hook_requirements`. Previously only WHOIS egress was surfaced, so the more
+  common outage was invisible.
+
+### Changed
+
+- `whois_dns_ttl` now defaults to 86400 rather than 300. Registry WHOIS
+  addresses change on a scale of years, and five minutes guaranteed that most
+  real searches resolved from cold — which was exactly when the defect above was
+  reachable. `domain_availability_update_10005()` raises it only where it is
+  still the old default; a site that chose its own value keeps it.
+- New `dns_query_timeout_ms` setting (default 1500), a ceiling on a single DNS
+  query, itself clamped to whatever is left of the check budget.
+
+### Upgrade
+
+Run `drush updatedb`. No configuration or API changes.
+
+Reported by the maintainers of grid.sa, with a reproduction and packet-level
+measurements.
+
 ## [1.1.0] — 2026-07-26
 
 ### Added — pricing

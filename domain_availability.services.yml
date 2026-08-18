@@ -1,4 +1,9 @@
 parameters:
+  # Where the system's resolver addresses are listed. A parameter so a host
+  # with an unusual layout can point the bounded resolver somewhere else from
+  # its own sites/default/services.yml, and so tests can hand it a fixture.
+  domain_availability.resolv_conf: '/etc/resolv.conf'
+
   # Protocol facts, not site settings: which host speaks WHOIS for a TLD, and
   # how each registry words "no such domain". They live here rather than in
   # config because a site never needs to tune them, but a site that must (a new
@@ -170,6 +175,16 @@ services:
       - '@domain_availability.settings'
       - '@domain_availability.lookup_budget'
 
+  # A DNS stub resolver that takes a deadline, because dns_get_record() does
+  # not: a single stalled query used to run the request into PHP's
+  # max_execution_time and end it in a fatal.
+  domain_availability.dns_resolver:
+    class: Drupal\domain_availability\Service\BoundedDnsResolver
+    arguments:
+      - '@domain_availability.lookup_budget'
+      - '@logger.channel.domain_availability'
+      - '%domain_availability.resolv_conf%'
+
   domain_availability.host_resolver:
     class: Drupal\domain_availability\Service\HostResolver
     arguments:
@@ -177,6 +192,7 @@ services:
       - '@logger.channel.domain_availability'
       - '@domain_availability.settings'
       - '@domain_availability.lookup_budget'
+      - '@domain_availability.dns_resolver'
 
   # --- Lookup plumbing ------------------------------------------------------
 
@@ -270,6 +286,8 @@ services:
     arguments:
       - '@logger.channel.domain_availability'
       - '@domain_availability.settings'
+      - '@domain_availability.dns_resolver'
+      - '@domain_availability.lookup_budget'
     tags:
       - { name: domain_availability_provider, priority: 70 }
 
@@ -352,6 +370,7 @@ services:
       - '@domain_availability.whois_server_resolver'
       - '@domain_availability.settings'
       - '@datetime.time'
+      - '@domain_availability.dns_resolver'
 
   # --- Presentation ---------------------------------------------------------
 

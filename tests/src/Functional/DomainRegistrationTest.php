@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\domain_availability\Functional;
 
+use Drupal\Component\Serialization\Json;
 use Drupal\Core\Test\AssertMailTrait;
 use Drupal\domain_availability\Entity\DomainRegistrationRequestInterface;
 use Drupal\Tests\BrowserTestBase;
@@ -81,8 +82,19 @@ final class DomainRegistrationTest extends BrowserTestBase {
     $this->submitForm(['domain' => 'free'], 'Search');
 
     $this->assertSession()->pageTextContains('free.sa');
-    $this->assertSession()->elementExists('css', '#da-register-free-sa');
+    $button = $this->assertSession()->elementExists('css', '#da-register-free-sa');
     $this->assertSession()->elementNotExists('css', '#da-register-free-com');
+
+    // The dialog options must name the wrapper class through the "classes"
+    // map. jQuery UI's "dialogClass" is removed in Drupal 12, and because
+    // these options travel as JSON they are invisible to static analysis —
+    // only an assertion on the rendered attribute catches a regression.
+    $options = Json::decode($button->getAttribute('data-dialog-options') ?? '');
+    $this->assertSame(
+      ['ui-dialog' => 'domain-availability-register-dialog'],
+      $options['classes'] ?? NULL,
+    );
+    $this->assertArrayNotHasKey('dialogClass', $options);
 
     // A registered .sa never shows the button.
     $this->drupalGet('/domain-search');
