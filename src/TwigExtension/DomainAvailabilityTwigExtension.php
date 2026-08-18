@@ -38,7 +38,7 @@ final class DomainAvailabilityTwigExtension extends AbstractExtension {
    */
   public function getFunctions(): array {
     return [
-      new TwigFunction('domain_availability_search', [$this, 'renderSearch'], [
+      new TwigFunction('domain_availability_search', $this->renderSearch(...), [
         'is_safe' => ['html'],
       ]),
     ];

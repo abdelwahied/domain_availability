@@ -15,6 +15,37 @@ type id. Classes marked `@internal` may change in any release.
 
 Nothing yet.
 
+## [1.2.0] — 2026-08-17
+
+### Added
+
+- **Drupal 12 compatibility.** `core_version_requirement` on the module and its
+  test module, and the Composer `drupal/core` and `drupal/core-dev`
+  constraints, now accept `^12` alongside the existing `^10.3 || ^11`.
+
+### Changed
+
+- Status-report severities are resolved through
+  `DeprecationHelper::backwardsCompatibleCall()`, so Drupal 11.2 and later
+  receive the `RequirementSeverity` enum while Drupal 10.3 keeps the
+  `REQUIREMENT_*` constants it still defines. All three checks — sockets, the
+  DNS resolver and WHOIS egress — are converted, in both the procedural
+  `hook_requirements()` and the object-oriented implementation.
+- The registration modal names its wrapper class through the dialog `classes`
+  map instead of jQuery UI's `dialogClass`, which Drupal 12 removes. Both the
+  `OpenModalDialogCommand` call and the `data-dialog-options` payload on the
+  results-list button were migrated; the rendered class, and therefore the
+  existing CSS, is unchanged. A functional test now asserts on the rendered
+  attribute, since these options travel as JSON and no static check sees them.
+- The Twig function is registered with a first-class callable.
+
+### Notes
+
+- No behavioural or public API change. Validated on Drupal 11.4.4; Drupal 12
+  and Drupal 10.3 compatibility is established by static analysis, as no
+  runtime for either was available.
+
+
 ## [1.1.2] — 2026-07-27
 
 ### Fixed
