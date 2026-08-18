@@ -444,7 +444,7 @@ final class DomainRegistrationRequestForm extends FormBase {
       $response->addCommand(new OpenModalDialogCommand(
         $this->t('Register this domain'),
         $form,
-        ['width' => 640, 'dialogClass' => 'domain-availability-register-dialog'],
+        ['width' => 640, 'classes' => ['ui-dialog' => 'domain-availability-register-dialog']],
       ));
 
       return $response;

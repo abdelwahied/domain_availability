@@ -127,7 +127,7 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
             'data-dialog-type' => 'modal',
             'data-dialog-options' => Json::encode([
               'width' => 640,
-              'dialogClass' => 'domain-availability-register-dialog',
+              'classes' => ['ui-dialog' => 'domain-availability-register-dialog'],
             ]),
             'id' => DomainRegistrationRequestForm::buttonId($result->domain),
           ],

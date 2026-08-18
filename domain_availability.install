@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\Component\Utility\DeprecationHelper;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Hook\Attribute\LegacyRequirementsHook;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
@@ -45,7 +47,7 @@ function domain_availability_requirements(string $phase): array {
       'title' => new TranslatableMarkup('Domain Availability: sockets'),
       'value' => new TranslatableMarkup('stream_socket_client() is unavailable'),
       'description' => new TranslatableMarkup('WHOIS speaks raw TCP on port 43, so WHOIS-only TLDs cannot be checked. RDAP-backed TLDs still work.'),
-      'severity' => REQUIREMENT_WARNING,
+      'severity' => DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
     ];
   }
 
@@ -85,7 +87,7 @@ function domain_availability_requirements(string $phase): array {
       : new TranslatableMarkup('Port 43 blocked for @count TLD(s)', ['@count' => count($blocked)]),
     // A warning, never an error: a blocked port is a degraded lookup, not a
     // broken site. RDAP still answers for most TLDs.
-    'severity' => $blocked === [] ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+    'severity' => $blocked === [] ? DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::OK, fn() => REQUIREMENT_OK) : DeprecationHelper::backwardsCompatibleCall(\Drupal::VERSION, '11.2.0', fn() => RequirementSeverity::Warning, fn() => REQUIREMENT_WARNING),
     'description' => $blocked === []
       ? new TranslatableMarkup('WHOIS-only TLDs resolve normally: @list', [
         '@list' => implode(', ', array_map('strval', $reachable)),
