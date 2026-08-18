@@ -412,3 +412,39 @@ services:
       - '@domain_availability.status_report'
     tags:
       - { name: hooks }
+
+  # The remaining OOP hooks, for Drupal 11.1 and later. Each has a procedural
+  # counterpart in the .module file marked #[LegacyHook], which is what still
+  # runs on Drupal 10.3; the two never both run.
+  #
+  # Registered explicitly rather than left to HookCollectorPass's autowiring:
+  # it only auto-registers a class in src/Hook/ when the container has no
+  # definition for it, and these constructor arguments are module services with
+  # no autowiring aliases. The definitions are also what makes
+  # \Drupal::classResolver() hand the same configured object to the procedural
+  # delegates on Drupal 10.3.
+  Drupal\domain_availability\Hook\DomainAvailabilityHelp:
+    autowire: false
+    tags:
+      - { name: hooks }
+
+  Drupal\domain_availability\Hook\DomainAvailabilityTheme:
+    autowire: false
+    tags:
+      - { name: hooks }
+
+  Drupal\domain_availability\Hook\DomainAvailabilityMail:
+    autowire: false
+    arguments:
+      - '@date.formatter'
+      - '@string_translation'
+    tags:
+      - { name: hooks }
+
+  Drupal\domain_availability\Hook\DomainAvailabilityThemePreprocess:
+    autowire: false
+    arguments:
+      - '@domain_availability.registration_settings'
+      - '@domain_availability.pricing_manager'
+    tags:
+      - { name: hooks }

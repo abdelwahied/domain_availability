@@ -7,6 +7,7 @@ namespace Drupal\domain_availability\Hook;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
+use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Url;
 use Drupal\domain_availability\Dto\CheckReport;
@@ -18,9 +19,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Prepares variables for the module's templates.
  *
- * Registered as the theme hook's `initial preprocess` callback, which replaces
- * the template_preprocess_HOOK() function Drupal 11.3 deprecated. Being a class
- * also means the registration settings arrive by injection rather than through
+ * On Drupal 11.1 and later this is found by the #[Hook] attribute below. On
+ * Drupal 10.3 no OOP hook is discovered at all, so the procedural
+ * hook_preprocess_HOOK() in the .module file delegates here instead; it carries
+ * #[LegacyHook] so the two never both run. Either way the logic lives here
+ * once, and the registration settings arrive by injection rather than through
  * a static service lookup.
  *
  * @internal
@@ -64,6 +67,7 @@ final class DomainAvailabilityThemePreprocess implements ContainerInjectionInter
    * @param array<string, mixed> $variables
    *   The variables, containing a 'report' CheckReport.
    */
+  #[Hook('preprocess_domain_availability_results')]
   public function preprocessResults(array &$variables): void {
     $report = $variables['report'];
 
